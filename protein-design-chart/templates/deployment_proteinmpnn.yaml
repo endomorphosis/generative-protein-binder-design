@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "protein-design-chart.fullname" . }}-proteinmpnn
+  labels:
+    {{- include "protein-design-chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proteinmpnn
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "protein-design-chart.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: proteinmpnn
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "protein-design-chart.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: proteinmpnn
+    spec:
+      {{- if .Values.imagePullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret.name }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Values.proteinmpnn.containerName }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.proteinmpnn.repository }}:{{ .Values.proteinmpnn.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.proteinmpnn.pullPolicy }}
+          env:
+            - name: NGC_CLI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.imagePullSecret.secretName }}
+                  key: {{ .Values.imagePullSecret.secretKey }}
+            - name: NIM_CACHE_PATH
+              value: {{ .Values.proteinmpnn.cacheFolder }}
+            - name: NIM_HTTP_API_PORT
+              value: {{ .Values.proteinmpnn.containerPort | quote }}
+          volumeMounts:
+          - mountPath : {{ .Values.proteinmpnn.cacheFolder | quote }}
+            name: proteinmpnn-pv1
+          ports:
+            - name: http
+              containerPort: {{ .Values.proteinmpnn.containerPort }}
+              protocol: TCP
+          livenessProbe:
+            initialDelaySeconds: 3600
+            httpGet:
+              path: /v1/health/live
+              port: {{ .Values.proteinmpnn.containerPort }}
+          readinessProbe:
+            initialDelaySeconds: 3600
+            httpGet:
+              path: /v1/health/ready
+              port: {{ .Values.proteinmpnn.containerPort }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: proteinmpnn-pv1
+          persistentVolumeClaim:
+            claimName: protein-design-shared-vol
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

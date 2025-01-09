@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "protein-design-chart.fullname" . }}-rfdiffusion
+  labels:
+    {{- include "protein-design-chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rfdiffusion
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "protein-design-chart.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: rfdiffusion
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "protein-design-chart.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: rfdiffusion
+    spec:
+      {{- if .Values.imagePullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret.name }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Values.rfdiffusion.containerName }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.rfdiffusion.repository }}:{{ .Values.rfdiffusion.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.rfdiffusion.pullPolicy }}
+          env:
+            - name: NGC_CLI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.imagePullSecret.secretName }}
+                  key: {{ .Values.imagePullSecret.secretKey }}
+            - name: NIM_CACHE_PATH
+              value: {{ .Values.rfdiffusion.cacheFolder }}
+            - name: NIM_HTTP_API_PORT
+              value: {{ .Values.rfdiffusion.containerPort | quote }}
+          volumeMounts:
+          - mountPath : {{ .Values.proteinmpnn.cacheFolder | quote }}
+            name: rfdiffusion-pv1
+          ports:
+            - name: http
+              containerPort: {{ .Values.rfdiffusion.containerPort }}
+              protocol: TCP
+          livenessProbe:
+            initialDelaySeconds: 3600
+            httpGet:
+              path: /v1/health/live
+              port: {{ .Values.rfdiffusion.containerPort }}
+          readinessProbe:
+            initialDelaySeconds: 3600
+            httpGet:
+              path: /v1/health/ready
+              port: {{ .Values.rfdiffusion.containerPort }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: rfdiffusion-pv1
+          persistentVolumeClaim:
+            claimName: protein-design-shared-vol
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
