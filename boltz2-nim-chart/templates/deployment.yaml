@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "boltz2-nim-chart.fullname" . }}
+  labels:
+    {{- include "boltz2-nim-chart.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "boltz2-nim-chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "boltz2-nim-chart.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecret }}
+      imagePullSecrets:
+        - name: {{ .name }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.persistence.fixPermissions }}
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.35
+          command: ['sh', '-c']
+          args:
+            - |
+              echo "Setting permissions for cache directory..."
+              chown -R 1000:1000 {{ .Values.boltz2.cacheFolder }}
+              chmod -R 755 {{ .Values.boltz2.cacheFolder }}
+              echo "Permissions set successfully"
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: cache-volume
+              mountPath: {{ .Values.boltz2.cacheFolder }}
+      {{- end }}
+      containers:
+        - name: {{ .Values.boltz2.containerName }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.boltz2.repository }}:{{ .Values.boltz2.tag }}"
+          imagePullPolicy: {{ .Values.boltz2.pullPolicy }}
+          env:
+            - name: NGC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.imagePullSecret.secretName }}
+                  key: {{ .Values.imagePullSecret.secretKey }}
+            - name: NIM_CACHE_PATH
+              value: {{ .Values.boltz2.cacheFolder }}
+            - name: NIM_HTTP_API_PORT
+              value: {{ .Values.boltz2.containerPort | quote }}
+            - name: NIM_BOLTZ_PAIRFORMER_BACKEND
+              value: {{ .Values.boltz2.pairformerBackend | quote }}
+            - name: NIM_BOLTZ_ENABLE_DIFFUSION_TF32
+              value: {{ .Values.boltz2.enableDiffusionTF32 | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.boltz2.containerPort }}
+              protocol: TCP
+          livenessProbe:
+            initialDelaySeconds: 3600
+            httpGet:
+              path: /v1/health/live
+              port: {{ .Values.boltz2.containerPort }}
+          readinessProbe:
+            initialDelaySeconds: 3600
+            httpGet:
+              path: /v1/health/ready
+              port: {{ .Values.boltz2.containerPort }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: cache-volume
+              mountPath: {{ .Values.boltz2.cacheFolder }}
+      volumes:
+        - name: cache-volume
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "boltz2-nim-chart.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }} 
