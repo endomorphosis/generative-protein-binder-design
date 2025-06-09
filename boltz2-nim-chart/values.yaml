@@ -66,10 +66,9 @@ persistence:
   enabled: true
   existingClaim: ""
   storageClass: standard
-  accessMode: ReadWriteMany
+  accessMode: ReadWriteOnce
   hostPath: /data/nim
-  size: 1.5Ti
-  # Fix permissions using initContainer
+  size: 10Gi
   fixPermissions: true
 
 nodeSelector: {}

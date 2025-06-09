@@ -6,7 +6,6 @@ metadata:
   labels:
     {{- include "boltz2-nim-chart.labels" . | nindent 4 }}
 spec:
-  volumeName: pv1
   accessModes:
     - {{ .Values.persistence.accessMode | quote }}
   storageClassName: {{ .Values.persistence.storageClass }}
