@@ -69,12 +69,20 @@ spec:
               containerPort: {{ .Values.boltz2.containerPort }}
               protocol: TCP
           livenessProbe:
-            initialDelaySeconds: 3600
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            successThreshold: {{ .Values.probes.liveness.successThreshold }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
             httpGet:
               path: /v1/health/live
               port: {{ .Values.boltz2.containerPort }}
           readinessProbe:
-            initialDelaySeconds: 3600
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            successThreshold: {{ .Values.probes.readiness.successThreshold }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
             httpGet:
               path: /v1/health/ready
               port: {{ .Values.boltz2.containerPort }}
