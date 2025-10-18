@@ -2,4 +2,5 @@
 
 This file is used to trigger ARM64 completion workflows.
 
-Last triggered: Initial setup
+Last triggered: $(date)
+Workflow: arm64-complete-port.yml
