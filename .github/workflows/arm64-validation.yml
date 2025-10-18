@@ -164,7 +164,7 @@ jobs:
         if [ -f "deploy/docker-compose.yaml" ]; then
           echo "Validating docker-compose.yaml:"
           docker compose -f deploy/docker-compose.yaml config > /tmp/compose-config.yaml
-          echo "✓ docker-compose.yaml is valid"
+          echo "[OK] docker-compose.yaml is valid"
           
           # Check platform specifications
           echo "Platform specifications:"
@@ -175,7 +175,7 @@ jobs:
         if [ -f "deploy/docker-compose-single-gpu.yaml" ]; then
           echo "Validating docker-compose-single-gpu.yaml:"
           docker compose -f deploy/docker-compose-single-gpu.yaml config > /tmp/compose-single-config.yaml
-          echo "✓ docker-compose-single-gpu.yaml is valid"
+          echo "[OK] docker-compose-single-gpu.yaml is valid"
         fi
         
         echo
@@ -198,7 +198,7 @@ jobs:
         # Install requirements
         if [ -f "requirements.txt" ]; then
           pip install -r requirements.txt
-          echo "✓ Requirements installed"
+          echo "[OK] Requirements installed"
         fi
         
         # Verify installations
@@ -206,32 +206,14 @@ jobs:
         pip list
         
         # Test imports
-        python3 -c "
-import sys
-import platform
-print(f'Python version: {sys.version}')
-print(f'Platform: {platform.machine()}')
-print(f'Python implementation: {platform.python_implementation()}')
-
-# Test key packages
-try:
-    import jupyter
-    print(f'✓ Jupyter: {jupyter.__version__}')
-except ImportError as e:
-    print(f'✗ Jupyter: {e}')
-
-try:
-    import requests
-    print(f'✓ Requests: {requests.__version__}')
-except ImportError as e:
-    print(f'✗ Requests: {e}')
-
-try:
-    import numpy as np
-    print(f'✓ NumPy: {np.__version__}')
-except ImportError as e:
-    print(f'✗ NumPy: {e}')
-"
+        echo "Testing Python packages:"
+        python3 --version
+        python3 -c "import sys; print('Platform:', sys.platform)"
+        
+        # Test packages individually
+        python3 -c "import jupyter; print('[OK] Jupyter:', jupyter.__version__)" 2>/dev/null || echo "[FAIL] Jupyter not found"
+        python3 -c "import requests; print('[OK] Requests:', requests.__version__)" 2>/dev/null || echo "[FAIL] Requests not found"
+        python3 -c "import numpy; print('[OK] NumPy:', numpy.__version__)" 2>/dev/null || echo "[FAIL] NumPy not found"
         echo
         
     - name: Test Conda/Mamba Setup (Optional)
@@ -269,14 +251,14 @@ except ImportError as e:
         for script in "${scripts[@]}"; do
           if [ -f "$script" ]; then
             if [ -x "$script" ]; then
-              echo "✓ $script: exists and executable"
+              echo "[OK] $script: exists and executable"
             else
-              echo "✗ $script: exists but not executable"
+              echo "[FAIL] $script: exists but not executable"
               chmod +x "$script"
-              echo "  → Made executable"
+              echo "  -> Made executable"
             fi
           else
-            echo "✗ $script: not found"
+            echo "[FAIL] $script: not found"
           fi
         done
         echo
@@ -284,61 +266,53 @@ except ImportError as e:
     - name: Generate ARM64 Compatibility Report
       if: always()
       run: |
-        cat > arm64_validation_report.txt << EOF
-=== ARM64 Platform Validation Report ===
-Generated: $(date)
-Workflow Run: ${{ github.run_number }}
-Test Mode: ${{ github.event.inputs.test_mode || 'quick' }}
-
-== System Information ==
-Architecture: ${{ steps.platform.outputs.arch }}
-OS: ${{ steps.platform.outputs.os_name }} ${{ steps.platform.outputs.os_version }}
-Kernel: ${{ steps.platform.outputs.kernel }}
-Is ARM64: ${{ steps.platform.outputs.is_arm64 }}
-
-== Hardware ==
-CPU Cores: $(nproc)
-Memory: $(free -h | awk '/^Mem:/{print $2}')
-EOF
-
+        echo "=== ARM64 Platform Validation Report ===" > arm64_validation_report.txt
+        echo "Generated: $(date)" >> arm64_validation_report.txt
+        echo "Workflow Run: ${{ github.run_number }}" >> arm64_validation_report.txt
+        echo "Test Mode: ${{ github.event.inputs.test_mode || 'quick' }}" >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== System Information ==" >> arm64_validation_report.txt
+        echo "Architecture: ${{ steps.platform.outputs.arch }}" >> arm64_validation_report.txt
+        echo "OS: ${{ steps.platform.outputs.os_name }} ${{ steps.platform.outputs.os_version }}" >> arm64_validation_report.txt
+        echo "Kernel: ${{ steps.platform.outputs.kernel }}" >> arm64_validation_report.txt
+        echo "Is ARM64: ${{ steps.platform.outputs.is_arm64 }}" >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== Hardware ==" >> arm64_validation_report.txt
+        echo "CPU Cores: $(nproc)" >> arm64_validation_report.txt
+        echo "Memory: $(free -h | awk '/^Mem:/{print $2}')" >> arm64_validation_report.txt
+        
         if command -v nvidia-smi >/dev/null 2>&1; then
           echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)" >> arm64_validation_report.txt
           echo "GPU Driver: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)" >> arm64_validation_report.txt
         else
           echo "GPU: Not available" >> arm64_validation_report.txt
         fi
-
-        cat >> arm64_validation_report.txt << EOF
-
-== Docker ==
-Docker Version: $(docker --version)
-Compose Version: $(docker compose version)
-
-== Platform Support ==
-ARM64 Native Containers: Supported
-AMD64 Emulation: $(docker run --rm --platform=linux/amd64 ubuntu:22.04 echo "Supported" 2>/dev/null || echo "Not Supported")
-
-== Test Results ==
-All critical tests completed. See workflow logs for details.
-
-== Recommendations ==
-EOF
-
+        
+        echo "" >> arm64_validation_report.txt
+        echo "== Docker ==" >> arm64_validation_report.txt
+        echo "Docker Version: $(docker --version)" >> arm64_validation_report.txt
+        echo "Compose Version: $(docker compose version)" >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== Platform Support ==" >> arm64_validation_report.txt
+        echo "ARM64 Native Containers: Supported" >> arm64_validation_report.txt
+        echo "AMD64 Emulation: $(docker run --rm --platform=linux/amd64 ubuntu:22.04 echo 'Supported' 2>/dev/null || echo 'Not Supported')" >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== Test Results ==" >> arm64_validation_report.txt
+        echo "All critical tests completed. See workflow logs for details." >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== Recommendations ==" >> arm64_validation_report.txt
+        
         if [ "${{ steps.platform.outputs.is_arm64 }}" = "true" ]; then
-          cat >> arm64_validation_report.txt << EOF
-✓ System is ARM64 - optimal for native ARM64 workflows
-- Use native installation workflows for best performance
-- Docker containers will use AMD64 emulation for NVIDIA NIM
-- Consider hybrid approach: native tools + Docker for unavailable components
-EOF
+          echo "[OK] System is ARM64 - optimal for native ARM64 workflows" >> arm64_validation_report.txt
+          echo "- Use native installation workflows for best performance" >> arm64_validation_report.txt
+          echo "- Docker containers will use AMD64 emulation for NVIDIA NIM" >> arm64_validation_report.txt
+          echo "- Consider hybrid approach: native tools + Docker for unavailable components" >> arm64_validation_report.txt
         else
-          cat >> arm64_validation_report.txt << EOF
-✗ System is not ARM64 (${{ steps.platform.outputs.arch }})
-- ARM64-specific optimizations will not apply
-- Use standard Docker workflows without emulation
-EOF
+          echo "[FAIL] System is not ARM64 (${{ steps.platform.outputs.arch }})" >> arm64_validation_report.txt
+          echo "- ARM64-specific optimizations will not apply" >> arm64_validation_report.txt
+          echo "- Use standard Docker workflows without emulation" >> arm64_validation_report.txt
         fi
-
+        
         cat arm64_validation_report.txt
         echo
         
@@ -360,9 +334,9 @@ EOF
         echo
         
         if [ "${{ steps.platform.outputs.is_arm64 }}" = "true" ]; then
-          echo "✅ ARM64 platform validation: PASSED"
+          echo "[PASS] ARM64 platform validation: PASSED"
           echo "System is ready for ARM64 workflows"
         else
-          echo "ℹ️  Platform is ${{ steps.platform.outputs.arch }}"
+          echo "[INFO]  Platform is ${{ steps.platform.outputs.arch }}"
           echo "ARM64-specific features not applicable"
         fi
