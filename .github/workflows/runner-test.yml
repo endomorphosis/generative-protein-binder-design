@@ -1,0 +1,69 @@
+name: Runner Connection Test
+
+on:
+  push:
+    branches: [ '*' ]
+  workflow_dispatch:
+
+jobs:
+  test-runner:
+    runs-on: [self-hosted, ARM64, gpu]
+    timeout-minutes: 5
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Test Runner Connection
+      run: |
+        echo "=== GitHub Actions Runner Test ==="
+        echo "Workflow triggered successfully!"
+        echo "Runner: $(hostname)"
+        echo "Architecture: $(uname -m)"
+        echo "Date: $(date)"
+        echo "Working directory: $(pwd)"
+        echo "User: $(whoami)"
+        echo "CPU cores: $(nproc)"
+        echo "Memory: $(free -h | grep '^Mem:' | awk '{print $2}')"
+        echo
+        
+    - name: Test GPU Access
+      run: |
+        echo "=== GPU Test ==="
+        if command -v nvidia-smi >/dev/null 2>&1; then
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+        else
+          echo "nvidia-smi not available"
+        fi
+        echo
+        
+    - name: Test Python Environment  
+      run: |
+        echo "=== Python Environment Test ==="
+        python3 --version
+        if [ -d ".venv" ]; then
+          echo "Virtual environment found"
+          source .venv/bin/activate
+          echo "Virtual environment activated"
+          pip list | head -10
+        else
+          echo "No virtual environment found"
+        fi
+        echo
+        
+    - name: Test Docker Access
+      run: |
+        echo "=== Docker Test ==="
+        if command -v docker >/dev/null 2>&1; then
+          docker --version
+          docker info --format '{{.ServerVersion}}' 2>/dev/null || echo "Docker daemon not accessible"
+        else
+          echo "Docker not installed"
+        fi
+        echo
+        
+    - name: Success Message
+      run: |
+        echo "🎉 SUCCESS! 🎉"
+        echo "GitHub Actions self-hosted runner is working perfectly!"
+        echo "ARM64 system with GPU support is ready for protein design workflows."

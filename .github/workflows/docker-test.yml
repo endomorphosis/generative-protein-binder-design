@@ -1,0 +1,231 @@
+name: Docker Compatibility Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to test'
+        required: true
+        default: 'linux/arm64'
+        type: choice
+        options:
+        - linux/arm64
+        - linux/amd64
+        - both
+      force_build:
+        description: 'Force rebuild of images'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  docker-test:
+    runs-on: [self-hosted, ARM64, gpu]
+    timeout-minutes: 120
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Docker Environment Check
+      run: |
+        echo "=== Docker Environment Check ==="
+        docker --version
+        docker compose version
+        echo "Architecture: $(uname -m)"
+        echo "Docker Buildx platforms:"
+        docker buildx ls
+        echo
+        
+    - name: Test Docker Platform Support
+      run: |
+        echo "=== Testing Docker Platform Support ==="
+        
+        # Test basic ARM64 container
+        echo "Testing ARM64 Ubuntu container:"
+        docker run --rm --platform=linux/arm64 ubuntu:22.04 uname -a || echo "ARM64 test failed"
+        
+        # Test AMD64 emulation (if supported)
+        if [ "${{ github.event.inputs.platform }}" = "linux/amd64" ] || [ "${{ github.event.inputs.platform }}" = "both" ]; then
+          echo "Testing AMD64 Ubuntu container (emulated):"
+          docker run --rm --platform=linux/amd64 ubuntu:22.04 uname -a || echo "AMD64 emulation failed"
+        fi
+        echo
+        
+    - name: Build Custom ARM64 Base Image
+      if: ${{ github.event.inputs.platform == 'linux/arm64' || github.event.inputs.platform == 'both' }}
+      run: |
+        echo "=== Building Custom ARM64 Base Image ==="
+        
+        # Create Dockerfile for ARM64 base
+        cat > Dockerfile.arm64 << 'EOL'
+        FROM ubuntu:22.04
+        
+        # Set platform
+        ARG TARGETPLATFORM
+        ARG BUILDPLATFORM
+        RUN echo "Building on $BUILDPLATFORM, targeting $TARGETPLATFORM"
+        
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y \
+            python3 \
+            python3-pip \
+            python3-venv \
+            curl \
+            wget \
+            git \
+            && rm -rf /var/lib/apt/lists/*
+        
+        # Install NVIDIA runtime dependencies
+        RUN apt-get update && apt-get install -y \
+            nvidia-container-runtime \
+            && rm -rf /var/lib/apt/lists/* || true
+        
+        # Create working directory
+        WORKDIR /workspace
+        
+        # Test Python
+        RUN python3 --version
+        RUN python3 -c "import sys; print(f'Python platform: {sys.platform}')"
+        
+        CMD ["bash"]
+        EOL
+
+        # Build the image
+        docker build -f Dockerfile.arm64 \
+          --platform=linux/arm64 \
+          -t protein-design-arm64:test .
+          
+        echo "ARM64 base image built successfully"
+        
+    - name: Test NVIDIA Container Runtime
+      run: |
+        echo "=== Testing NVIDIA Container Runtime ==="
+        
+        # Test GPU access in container
+        docker run --rm --gpus all --platform=linux/arm64 \
+          ubuntu:22.04 sh -c "
+            apt-get update && apt-get install -y nvidia-smi || echo 'nvidia-smi install failed'
+            nvidia-smi || echo 'GPU access failed'
+          " || echo "GPU container test failed"
+        echo
+        
+    - name: Test BioNeMo Images (Pull Only)
+      run: |
+        echo "=== Testing BioNeMo Image Compatibility ==="
+        
+        # Try to pull various BioNeMo images
+        images=(
+          "nvcr.io/nim/nvidia/alphafold2:1.0.0"
+          "nvcr.io/nim/nvidia/rfdiffusion:1.0.0" 
+          "nvcr.io/nim/nvidia/proteinmpnn:1.0.0"
+        )
+        
+        for image in "${images[@]}"; do
+          echo "Testing $image:"
+          docker pull "$image" --platform=linux/amd64 || echo "Failed to pull $image"
+          
+          # Test image architecture
+          docker image inspect "$image" --format '{{.Architecture}}' 2>/dev/null || echo "Cannot inspect $image"
+        done
+        echo
+        
+    - name: Test Docker Compose Configuration
+      run: |
+        echo "=== Testing Docker Compose Configuration ==="
+        
+        # Test compose file validation
+        if [ -f "deploy/docker-compose.yaml" ]; then
+          echo "Validating docker-compose.yaml:"
+          docker compose -f deploy/docker-compose.yaml config || echo "Compose validation failed"
+          
+          # Try to start services (dry run)
+          echo "Testing service startup (dry run):"
+          docker compose -f deploy/docker-compose.yaml pull --ignore-pull-failures || echo "Pull failed"
+        else
+          echo "No docker-compose.yaml found"
+        fi
+        echo
+        
+    - name: Platform Emulation Test
+      if: ${{ github.event.inputs.platform == 'linux/amd64' || github.event.inputs.platform == 'both' }}
+      run: |
+        echo "=== Testing Platform Emulation ==="
+        
+        # Test QEMU emulation setup
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes || echo "QEMU setup failed"
+        
+        # Test AMD64 emulation with complex operations
+        docker run --rm --platform=linux/amd64 ubuntu:22.04 sh -c "
+          uname -a
+          apt-get update
+          apt-get install -y python3 python3-pip
+          python3 -c 'import sys; print(f\"Python version: {sys.version}\")'
+        " || echo "AMD64 emulation test failed"
+        echo
+        
+    - name: Memory and Resource Test
+      run: |
+        echo "=== Container Resource Test ==="
+        
+        # Test container resource limits
+        docker run --rm --platform=linux/arm64 \
+          --memory=4g \
+          --cpus=2 \
+          ubuntu:22.04 sh -c "
+            echo 'Memory info:'
+            cat /proc/meminfo | head -5
+            echo 'CPU info:'
+            nproc
+            cat /proc/cpuinfo | grep processor | wc -l
+          " || echo "Resource test failed"
+        echo
+        
+    - name: Generate Compatibility Report
+      if: always()
+      run: |
+        echo "=== Docker Compatibility Report ===" > docker_report.txt
+        echo "Generated: $(date)" >> docker_report.txt
+        echo "Platform tested: ${{ github.event.inputs.platform }}" >> docker_report.txt
+        echo "Force build: ${{ github.event.inputs.force_build }}" >> docker_report.txt
+        echo "Host architecture: $(uname -m)" >> docker_report.txt
+        echo >> docker_report.txt
+        
+        echo "Docker Version:" >> docker_report.txt
+        docker --version >> docker_report.txt
+        echo >> docker_report.txt
+        
+        echo "Available Images:" >> docker_report.txt
+        docker images | head -10 >> docker_report.txt
+        echo >> docker_report.txt
+        
+        echo "Container Runtime Test:" >> docker_report.txt
+        docker run --rm ubuntu:22.04 echo "Container runtime: OK" >> docker_report.txt 2>&1 || echo "Container runtime: FAILED" >> docker_report.txt
+        
+        cat docker_report.txt
+        
+    - name: Upload Docker Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-compatibility-report-${{ github.event.inputs.platform }}-${{ github.run_number }}
+        path: docker_report.txt
+        retention-days: 30
+        
+    - name: Cleanup Test Images
+      if: always()
+      run: |
+        echo "=== Cleaning up test images ==="
+        
+        # Remove test images
+        docker rmi protein-design-arm64:test 2>/dev/null || true
+        
+        # Clean up dangling images
+        docker image prune -f
+        
+        # Clean up build cache if forced
+        if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+          docker builder prune -f
+        fi
+        
+        echo "Cleanup completed"

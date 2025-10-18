@@ -2,6 +2,24 @@
 
 This guide will help you set up the NVIDIA BioNeMo Blueprint for Protein Binder Design on your local machine.
 
+## Installation Options
+
+Choose the setup method that best fits your system:
+
+1. **Docker-based Setup (Recommended)** - This guide
+   - Works on most systems with Docker
+   - Easiest and fastest setup
+   - Uses pre-built containers
+
+2. **ARM64 Systems with Docker** - See [ARM64_COMPATIBILITY.md](ARM64_COMPATIBILITY.md)
+   - For Apple Silicon (M1/M2/M3) or ARM servers
+   - Uses Docker with platform emulation
+
+3. **ARM64 Native Installation (Advanced)** - See [ARM64_NATIVE_INSTALLATION.md](ARM64_NATIVE_INSTALLATION.md)
+   - For experienced users on ARM64 systems
+   - Requires building tools from source
+   - Takes several days to set up
+
 ## Quick Start
 
 For a streamlined setup experience, run the automated setup script:

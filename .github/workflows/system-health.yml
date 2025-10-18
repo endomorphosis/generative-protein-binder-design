@@ -1,0 +1,140 @@
+name: System Health Check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily at 8:00 AM UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      deep_check:
+        description: 'Perform deep system analysis'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  system-health:
+    runs-on: [self-hosted, ARM64, gpu]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: System Information
+      run: |
+        echo "=== System Information ==="
+        echo "Hostname: $(hostname)"
+        echo "Architecture: $(uname -m)"
+        echo "OS: $(lsb_release -d | cut -f2)"
+        echo "Kernel: $(uname -r)"
+        echo "Uptime: $(uptime)"
+        echo
+        
+    - name: Hardware Resources
+      run: |
+        echo "=== Hardware Resources ==="
+        echo "CPU Cores: $(nproc)"
+        echo "CPU Info:"
+        lscpu | head -20
+        echo
+        echo "Memory:"
+        free -h
+        echo
+        echo "Disk Space:"
+        df -h | head -10
+        echo
+        
+    - name: GPU Status
+      run: |
+        echo "=== GPU Status ==="
+        if command -v nvidia-smi >/dev/null 2>&1; then
+          nvidia-smi
+          echo
+          echo "GPU Memory Usage:"
+          nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv
+        else
+          echo "nvidia-smi not available"
+        fi
+        echo
+        
+    - name: Docker Status
+      run: |
+        echo "=== Docker Status ==="
+        if command -v docker >/dev/null 2>&1; then
+          echo "Docker Version:"
+          docker --version
+          echo "Docker Compose Version:"
+          docker compose version
+          echo "Docker Status:"
+          docker system df
+          echo "Running Containers:"
+          docker ps
+        else
+          echo "Docker not available"
+        fi
+        echo
+        
+    - name: Python Environment
+      run: |
+        echo "=== Python Environment ==="
+        python3 --version
+        echo "Python Path: $(which python3)"
+        if [ -d ".venv" ]; then
+          echo "Virtual environment exists"
+          source .venv/bin/activate
+          echo "Virtual environment Python: $(which python)"
+          echo "Installed packages:"
+          pip list | head -20
+        else
+          echo "No virtual environment found"
+        fi
+        echo
+        
+    - name: Network Connectivity
+      run: |
+        echo "=== Network Connectivity ==="
+        echo "Internet connectivity:"
+        curl -I https://github.com || echo "GitHub unreachable"
+        curl -I https://ngc.nvidia.com || echo "NGC unreachable"
+        echo
+        
+    - name: Storage Analysis
+      if: ${{ github.event.inputs.deep_check == 'true' }}
+      run: |
+        echo "=== Deep Storage Analysis ==="
+        echo "Largest directories:"
+        du -h --max-depth=2 / 2>/dev/null | sort -hr | head -20 || true
+        echo
+        echo "NIM Cache status:"
+        if [ -d "$HOME/.cache/nim" ]; then
+          du -sh "$HOME/.cache/nim"
+          ls -la "$HOME/.cache/nim" | head -10
+        else
+          echo "NIM cache directory not found"
+        fi
+        echo
+        
+    - name: Generate System Report
+      run: |
+        echo "=== System Health Summary ===" > system_report.txt
+        echo "Generated: $(date)" >> system_report.txt
+        echo "Hostname: $(hostname)" >> system_report.txt
+        echo "Architecture: $(uname -m)" >> system_report.txt
+        echo "CPU Cores: $(nproc)" >> system_report.txt
+        echo "Memory: $(free -h | awk '/^Mem:/{print $2}')" >> system_report.txt
+        echo "GPU Count: $(nvidia-smi --list-gpus 2>/dev/null | wc -l)" >> system_report.txt
+        echo "Disk Available: $(df -h . | awk 'NR==2{print $4}')" >> system_report.txt
+        echo "Docker Status: $(docker --version 2>/dev/null || echo 'Not available')" >> system_report.txt
+        
+        cat system_report.txt
+        
+    - name: Upload System Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: system-health-report-${{ github.run_number }}
+        path: system_report.txt
+        retention-days: 30

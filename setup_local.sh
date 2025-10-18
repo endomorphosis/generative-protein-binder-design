@@ -38,6 +38,49 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to check system architecture
+check_architecture() {
+    echo "=== System Architecture Check ==="
+    echo
+    
+    ARCH=$(uname -m)
+    print_info "Detected architecture: $ARCH"
+    
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+        print_warning "ARM64 architecture detected"
+        echo
+        echo "The NVIDIA NIM containers are built for x86_64/AMD64 architecture."
+        echo "You have several options:"
+        echo
+        echo "1. Continue with Docker platform emulation (this script will set it up)"
+        echo "   - Quick to set up"
+        echo "   - May have performance impact"
+        echo "   - Some compatibility issues possible"
+        echo
+        echo "2. Native installation (advanced users only)"
+        echo "   - See ARM64_NATIVE_INSTALLATION.md for detailed instructions"
+        echo "   - Requires building tools from source"
+        echo "   - Takes several days to complete"
+        echo "   - Requires advanced technical skills"
+        echo
+        echo "3. Use cloud instances with x86_64 architecture"
+        echo "   - Best performance and compatibility"
+        echo "   - AWS, GCP, Azure instances with NVIDIA GPUs"
+        echo
+        read -p "Continue with Docker platform emulation setup? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Setup cancelled. See ARM64_NATIVE_INSTALLATION.md for native installation guide."
+            exit 0
+        fi
+        print_info "Continuing with Docker platform emulation setup..."
+    else
+        print_status "x86_64/AMD64 architecture detected (optimal)"
+    fi
+    
+    echo
+}
+
 # Function to check system requirements
 check_system_requirements() {
     echo "=== System Requirements Check ==="
@@ -296,6 +339,7 @@ show_next_steps() {
 
 # Main execution
 main() {
+    check_architecture
     check_system_requirements
     check_docker
     check_nvidia

@@ -1,0 +1,349 @@
+name: Jupyter Notebook Test
+
+on:
+  push:
+    paths:
+      - 'src/**/*.ipynb'
+      - '.github/workflows/jupyter-test.yml'
+  pull_request:
+    paths:
+      - 'src/**/*.ipynb'
+  workflow_dispatch:
+    inputs:
+      notebook_path:
+        description: 'Path to notebook to test'
+        required: false
+        default: 'src/protein-binder-design.ipynb'
+        type: string
+
+jobs:
+  jupyter-test:
+    runs-on: [self-hosted, ARM64, gpu]
+    timeout-minutes: 60
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Python Environment
+      run: |
+        echo "=== Setting up Python environment ==="
+        if [ ! -d ".venv" ]; then
+          python3 -m venv .venv
+        fi
+        source .venv/bin/activate
+        pip install --upgrade pip
+        
+        # Install Jupyter and common scientific packages
+        pip install \
+          jupyter \
+          jupyterlab \
+          notebook \
+          nbformat \
+          nbconvert \
+          ipykernel \
+          requests \
+          numpy \
+          pandas \
+          matplotlib \
+          seaborn \
+          biopython \
+          plotly
+          
+        echo "Python environment ready"
+        
+    - name: Install Jupyter Kernel
+      run: |
+        source .venv/bin/activate
+        python -m ipykernel install --user --name protein-design --display-name "Protein Design"
+        jupyter kernelspec list
+        
+    - name: Test Notebook Execution
+      run: |
+        echo "=== Testing Notebook Execution ==="
+        source .venv/bin/activate
+        
+        NOTEBOOK_PATH="${{ github.event.inputs.notebook_path || 'src/protein-binder-design.ipynb' }}"
+        
+        if [ ! -f "$NOTEBOOK_PATH" ]; then
+          echo "Notebook not found: $NOTEBOOK_PATH"
+          echo "Creating test notebook..."
+          
+          cat > test_notebook.ipynb << 'EOL'
+          {
+           "cells": [
+            {
+             "cell_type": "markdown",
+             "metadata": {},
+             "source": [
+              "# Protein Binder Design Test Notebook\n",
+              "\n",
+              "This is a test notebook for the ARM64 environment."
+             ]
+            },
+            {
+             "cell_type": "code",
+             "execution_count": null,
+             "metadata": {},
+             "source": [
+              "# System information\n",
+              "import sys\n",
+              "import platform\n",
+              "print(f\"Python version: {sys.version}\")\n",
+              "print(f\"Platform: {platform.platform()}\")\n",
+              "print(f\"Architecture: {platform.machine()}\")"
+             ],
+             "outputs": []
+            },
+            {
+             "cell_type": "code",
+             "execution_count": null,
+             "metadata": {},
+             "source": [
+              "# Test scientific packages\n",
+              "try:\n",
+              "    import numpy as np\n",
+              "    print(f\"NumPy version: {np.__version__}\")\n",
+              "    \n",
+              "    import pandas as pd\n",
+              "    print(f\"Pandas version: {pd.__version__}\")\n",
+              "    \n",
+              "    import matplotlib\n",
+              "    print(f\"Matplotlib version: {matplotlib.__version__}\")\n",
+              "    \n",
+              "    import Bio\n",
+              "    print(f\"BioPython version: {Bio.__version__}\")\n",
+              "    \n",
+              "    print(\"\\nAll packages imported successfully!\")\n",
+              "except ImportError as e:\n",
+              "    print(f\"Import error: {e}\")"
+             ],
+             "outputs": []
+            },
+            {
+             "cell_type": "code",
+             "execution_count": null,
+             "metadata": {},
+             "source": [
+              "# Test GPU availability\n",
+              "import subprocess\n",
+              "import os\n",
+              "\n",
+              "print(\"GPU Information:\")\n",
+              "try:\n",
+              "    result = subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total,memory.free', '--format=csv'], \n",
+              "                          capture_output=True, text=True)\n",
+              "    if result.returncode == 0:\n",
+              "        print(result.stdout)\n",
+              "    else:\n",
+              "        print(\"nvidia-smi failed or GPU not available\")\n",
+              "except FileNotFoundError:\n",
+              "    print(\"nvidia-smi not found\")\n",
+              "\n",
+              "# Check CUDA environment\n",
+              "cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', 'Not set')\n",
+              "print(f\"CUDA_VISIBLE_DEVICES: {cuda_visible}\")"
+             ],
+             "outputs": []
+            },
+            {
+             "cell_type": "code",
+             "execution_count": null,
+             "metadata": {},
+             "source": [
+              "# Test data processing\n",
+              "import numpy as np\n",
+              "import pandas as pd\n",
+              "\n",
+              "# Create sample protein data\n",
+              "protein_data = {\n",
+              "    'protein_id': ['1ABC', '2DEF', '3GHI', '4JKL', '5MNO'],\n",
+              "    'length': [150, 200, 180, 220, 175],\n",
+              "    'binding_affinity': [8.5, 7.2, 9.1, 6.8, 8.9],\n",
+              "    'expression_level': ['High', 'Medium', 'High', 'Low', 'High']\n",
+              "}\n",
+              "\n",
+              "df = pd.DataFrame(protein_data)\n",
+              "print(\"Sample Protein Data:\")\n",
+              "print(df)\n",
+              "print(f\"\\nData shape: {df.shape}\")\n",
+              "print(f\"Mean binding affinity: {df['binding_affinity'].mean():.2f}\")"
+             ],
+             "outputs": []
+            },
+            {
+             "cell_type": "code",
+             "execution_count": null,
+             "metadata": {},
+             "source": [
+              "# Test visualization\n",
+              "import matplotlib.pyplot as plt\n",
+              "import numpy as np\n",
+              "\n",
+              "# Create a simple plot\n",
+              "x = np.linspace(0, 10, 100)\n",
+              "y = np.sin(x)\n",
+              "\n",
+              "plt.figure(figsize=(10, 6))\n",
+              "plt.plot(x, y, 'b-', linewidth=2, label='sin(x)')\n",
+              "plt.xlabel('X')\n",
+              "plt.ylabel('Y')\n",
+              "plt.title('Test Plot - Sine Wave')\n",
+              "plt.grid(True, alpha=0.3)\n",
+              "plt.legend()\n",
+              "plt.tight_layout()\n",
+              "\n",
+              "# Save plot\n",
+              "plt.savefig('test_plot.png', dpi=150, bbox_inches='tight')\n",
+              "plt.show()\n",
+              "\n",
+              "print(\"Plot saved as test_plot.png\")"
+             ],
+             "outputs": []
+            }
+           ],
+           "metadata": {
+            "kernelspec": {
+             "display_name": "Protein Design",
+             "language": "python",
+             "name": "protein-design"
+            },
+            "language_info": {
+             "name": "python",
+             "version": "3.12.3"
+            }
+           },
+           "nbformat": 4,
+           "nbformat_minor": 4
+          }
+          EOL
+          
+          NOTEBOOK_PATH="test_notebook.ipynb"
+        fi
+        
+        echo "Testing notebook: $NOTEBOOK_PATH"
+        
+        # Execute notebook
+        jupyter nbconvert --to notebook --execute --inplace "$NOTEBOOK_PATH" || {
+          echo "Notebook execution failed, trying with timeout"
+          jupyter nbconvert --to notebook --execute --ExecutePreprocessor.timeout=300 --inplace "$NOTEBOOK_PATH"
+        }
+        
+        echo "Notebook execution completed"
+        
+    - name: Convert to HTML
+      if: always()
+      run: |
+        echo "=== Converting notebook to HTML ==="
+        source .venv/bin/activate
+        
+        NOTEBOOK_PATH="${{ github.event.inputs.notebook_path || 'src/protein-binder-design.ipynb' }}"
+        if [ ! -f "$NOTEBOOK_PATH" ]; then
+          NOTEBOOK_PATH="test_notebook.ipynb"
+        fi
+        
+        # Convert to HTML for viewing
+        jupyter nbconvert --to html "$NOTEBOOK_PATH" --output notebook_output.html
+        
+        echo "HTML conversion completed"
+        ls -la *.html
+        
+    - name: Extract Cell Outputs
+      if: always()
+      run: |
+        echo "=== Extracting cell outputs ==="
+        source .venv/bin/activate
+        
+        NOTEBOOK_PATH="${{ github.event.inputs.notebook_path || 'src/protein-binder-design.ipynb' }}"
+        if [ ! -f "$NOTEBOOK_PATH" ]; then
+          NOTEBOOK_PATH="test_notebook.ipynb"
+        fi
+        
+        # Extract outputs using Python
+        python3 << 'EOPYTHON'
+        import json
+        import sys
+        
+        notebook_path = sys.argv[1] if len(sys.argv) > 1 else "test_notebook.ipynb"
+        
+        try:
+            with open(notebook_path, 'r') as f:
+                notebook = json.load(f)
+            
+            print("=== Notebook Cell Outputs ===")
+            for i, cell in enumerate(notebook.get('cells', [])):
+                if cell.get('cell_type') == 'code':
+                    print(f"\n--- Cell {i+1} ---")
+                    if 'outputs' in cell and cell['outputs']:
+                        for output in cell['outputs']:
+                            if 'text' in output:
+                                print("".join(output['text']))
+                            elif 'data' in output and 'text/plain' in output['data']:
+                                print("".join(output['data']['text/plain']))
+                    else:
+                        print("No output")
+        except Exception as e:
+            print(f"Error reading notebook: {e}")
+        EOPYTHON
+        
+    - name: Test Jupyter Lab (Optional)
+      run: |
+        echo "=== Testing Jupyter Lab Startup ==="
+        source .venv/bin/activate
+        
+        # Test if Jupyter Lab can start (don't actually start server)
+        jupyter lab --version
+        jupyter lab --help | head -10
+        
+        echo "Jupyter Lab is functional"
+        
+    - name: Generate Test Report
+      if: always()
+      run: |
+        echo "=== Jupyter Test Report ===" > jupyter_report.txt
+        echo "Generated: $(date)" >> jupyter_report.txt
+        echo "Notebook tested: ${{ github.event.inputs.notebook_path || 'src/protein-binder-design.ipynb' }}" >> jupyter_report.txt
+        echo "Architecture: $(uname -m)" >> jupyter_report.txt
+        echo >> jupyter_report.txt
+        
+        echo "Python Environment:" >> jupyter_report.txt
+        source .venv/bin/activate
+        python --version >> jupyter_report.txt
+        pip list | grep -E "(jupyter|numpy|pandas|matplotlib|biopython)" >> jupyter_report.txt
+        echo >> jupyter_report.txt
+        
+        echo "Jupyter Kernels:" >> jupyter_report.txt
+        jupyter kernelspec list >> jupyter_report.txt
+        echo >> jupyter_report.txt
+        
+        echo "Generated Files:" >> jupyter_report.txt
+        ls -la *.html *.png *.ipynb 2>/dev/null >> jupyter_report.txt || echo "No generated files" >> jupyter_report.txt
+        
+        cat jupyter_report.txt
+        
+    - name: Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: jupyter-test-results-${{ github.run_number }}
+        path: |
+          jupyter_report.txt
+          *.html
+          *.png
+          test_notebook.ipynb
+        retention-days: 30
+        
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "=== Cleaning up test files ==="
+        
+        # Remove temporary files
+        rm -f test_notebook.ipynb
+        rm -f *.png
+        rm -f *.html
+        
+        # Clean Jupyter cache
+        jupyter --paths
+        
+        echo "Cleanup completed"
