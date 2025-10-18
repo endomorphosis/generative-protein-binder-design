@@ -4,6 +4,8 @@
 
 You asked me to "continue using the workflows and the github actions to port this entire project to arm", and I have created a comprehensive automated solution to complete the ARM64 porting process.
 
+> **👉 To continue the ARM64 porting process, see [ARM64_QUICK_START.md](ARM64_QUICK_START.md) or run `./continue_arm64_port.sh`**
+
 ## What I've Done
 
 ### 1. Created Automated Completion Workflow
