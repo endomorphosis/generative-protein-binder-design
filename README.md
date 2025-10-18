@@ -41,13 +41,18 @@ Run `./detect_platform.sh` to check your system and get platform-specific recomm
 This script will detect your system architecture and provide tailored recommendations.
 
 ### Documentation
+
+#### General Setup
 - [🚀 Local Setup Guide](LOCAL_SETUP.md) - Comprehensive local development setup
 - [📋 System Verification Report](SYSTEM_VERIFICATION.md) - Check your system compatibility
-- [⚙️ ARM64 Compatibility Guide](ARM64_COMPATIBILITY.md) - For ARM64 systems (Apple Silicon, ARM servers)
-- [🔧 ARM64 Native Installation](ARM64_NATIVE_INSTALLATION.md) - Advanced: Install tools natively on ARM64
 - [Deploy with Docker Compose](deploy)
 - [Deploy with Helm](protein-design-chart)
 - [Source code](src)
+
+#### ARM64-Specific Guides
+- [🏗️ ARM64 Deployment Guide](ARM64_DEPLOYMENT.md) - **Complete guide for ARM64 deployment**
+- [⚙️ ARM64 Compatibility Guide](ARM64_COMPATIBILITY.md) - Understanding ARM64 compatibility
+- [🔧 ARM64 Native Installation](ARM64_NATIVE_INSTALLATION.md) - Advanced: Install tools natively on ARM64
 
 ## Quick Start
 

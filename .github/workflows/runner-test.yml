@@ -19,7 +19,21 @@ jobs:
         echo "=== GitHub Actions Runner Test ==="
         echo "Workflow triggered successfully!"
         echo "Runner: $(hostname)"
-        echo "Architecture: $(uname -m)"
+        
+        ARCH=$(uname -m)
+        echo "Architecture: $ARCH"
+        
+        # Detect and report platform
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+          echo "Platform: ARM64 (native)"
+          echo "Note: AMD64 containers will use emulation"
+        elif [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then
+          echo "Platform: AMD64 (native)"
+          echo "Note: Optimal for NVIDIA NIM containers"
+        else
+          echo "Platform: $ARCH (unknown)"
+        fi
+        
         echo "Date: $(date)"
         echo "Working directory: $(pwd)"
         echo "User: $(whoami)"
@@ -56,7 +70,12 @@ jobs:
         echo "=== Docker Test ==="
         if command -v docker >/dev/null 2>&1; then
           docker --version
+          docker compose version
           docker info --format '{{.ServerVersion}}' 2>/dev/null || echo "Docker daemon not accessible"
+          
+          # Test platform emulation support
+          echo "Testing platform support:"
+          docker buildx ls | head -3 || echo "Buildx not available"
         else
           echo "Docker not installed"
         fi

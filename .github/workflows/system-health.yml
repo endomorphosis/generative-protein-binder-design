@@ -28,7 +28,21 @@ jobs:
       run: |
         echo "=== System Information ==="
         echo "Hostname: $(hostname)"
-        echo "Architecture: $(uname -m)"
+        
+        ARCH=$(uname -m)
+        echo "Architecture: $ARCH"
+        
+        # Platform detection
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+          echo "Platform: ARM64"
+          echo "Container Compatibility: Native ARM64, AMD64 via emulation"
+        elif [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then
+          echo "Platform: AMD64"
+          echo "Container Compatibility: Native AMD64 (optimal for NVIDIA NIM)"
+        else
+          echo "Platform: $ARCH (unknown)"
+        fi
+        
         echo "OS: $(lsb_release -d | cut -f2)"
         echo "Kernel: $(uname -r)"
         echo "Uptime: $(uptime)"
