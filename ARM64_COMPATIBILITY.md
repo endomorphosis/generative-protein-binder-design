@@ -30,14 +30,6 @@ docker compose up -d
 **Pros:** May work with emulation  
 **Cons:** Performance impact, potential compatibility issues
 
-### Option 2: Cloud-Based Alternative
-For optimal performance, consider using cloud instances with AMD64 architecture and multiple GPUs:
-
-- NVIDIA NGC Cloud instances
-- AWS EC2 instances with NVIDIA GPUs (g4dn, g5, p3, p4 families)
-- Google Cloud Platform with NVIDIA GPUs
-- Azure NC-series instances
-
 ### Option 2: Native Installation (Complex but Possible)
 For those with significant technical expertise, you can install the tools directly on your ARM64 system. This approach avoids Docker platform compatibility issues but requires substantial time and effort.
 
@@ -68,8 +60,16 @@ This guide includes:
 - Debugging can be challenging
 - Limited community support for ARM64 builds
 
-### Option 3: Alternative Approaches
-If both Docker emulation and native installation prove problematic:
+### Option 3: Cloud-Based Alternative
+For optimal performance, consider using cloud instances with AMD64 architecture and multiple GPUs:
+
+- NVIDIA NGC Cloud instances
+- AWS EC2 instances with NVIDIA GPUs (g4dn, g5, p3, p4 families)
+- Google Cloud Platform with NVIDIA GPUs
+- Azure NC-series instances
+
+### Option 4: Alternative Approaches
+If Docker emulation, native installation, and cloud options don't meet your needs:
 
 1. **ARM64 Compatible Alternatives:** Look for ARM64-native protein folding tools
 2. **VM with x86_64 Emulation:** Use QEMU to run a full x86_64 virtual machine
