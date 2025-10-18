@@ -320,12 +320,22 @@ You can now monitor the workflow execution and review the results when it comple
 
 ## Support & Next Steps
 
+**Quick Start: Continue ARM64 Porting**
+```bash
+# Interactive helper script to continue porting
+./continue_arm64_port.sh
+```
+
 **For workflow status:**
 - Check: https://github.com/hallucinate-llc/generative-protein-binder-design/actions
 - Read: `ARM64_WORKFLOW_STATUS.md`
+- Use helper: `./continue_arm64_port.sh`
+
+**For detailed completion steps:**
+- Read: `ARM64_COMPLETION_CHECKLIST.md` - **Step-by-step checklist for remaining tasks**
+- Read: `ARM64_NEXT_STEPS.md`
 
 **For usage instructions:**
-- Read: `ARM64_NEXT_STEPS.md`
 - Read: `ARM64_DEPLOYMENT.md`
 
 **For porting details:**
