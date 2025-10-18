@@ -4,7 +4,19 @@ This directory contains GitHub Actions workflows for the Protein Binder Design p
 
 ## Available Workflows
 
-### 1. System Health Check (`system-health.yml`)
+### 1. ARM64 Platform Validation (`arm64-validation.yml`)
+- **Trigger**: Push to main/develop, PRs, manual dispatch
+- **Purpose**: Comprehensive ARM64 platform compatibility validation
+- **Features**:
+  - Architecture detection and validation
+  - ARM64 native container testing
+  - AMD64 emulation testing
+  - NVIDIA container runtime validation
+  - Docker Compose configuration validation
+  - Python environment setup verification
+  - Platform-specific recommendations
+
+### 2. System Health Check (`system-health.yml`)
 - **Trigger**: Push to main/develop, PRs, daily schedule, manual dispatch
 - **Purpose**: Monitor system health and resource availability
 - **Features**:
@@ -14,7 +26,7 @@ This directory contains GitHub Actions workflows for the Protein Binder Design p
   - Storage analysis
   - Network connectivity checks
 
-### 2. ARM64 Native Installation Test (`native-install-test.yml`)
+### 3. ARM64 Native Installation Test (`native-install-test.yml`)
 - **Trigger**: Manual dispatch with component selection
 - **Purpose**: Test native ARM64 installation of protein design tools
 - **Components**:
@@ -23,7 +35,7 @@ This directory contains GitHub Actions workflows for the Protein Binder Design p
   - ProteinMPNN (sequence design)
 - **Features**: Environment isolation, comprehensive testing, cleanup
 
-### 3. Docker Compatibility Test (`docker-test.yml`)
+### 4. Docker Compatibility Test (`docker-test.yml`)
 - **Trigger**: Manual dispatch with platform selection
 - **Purpose**: Test Docker container compatibility on ARM64
 - **Platforms**: 
@@ -31,7 +43,7 @@ This directory contains GitHub Actions workflows for the Protein Binder Design p
   - `linux/amd64` (emulated)
 - **Features**: Platform emulation, NVIDIA runtime testing, image building
 
-### 4. Protein Design Pipeline (`protein-design-pipeline.yml`)
+### 5. Protein Design Pipeline (`protein-design-pipeline.yml`)
 - **Trigger**: Manual dispatch with configuration options
 - **Purpose**: Full protein binder design pipeline
 - **Pipeline Steps**:
@@ -42,7 +54,7 @@ This directory contains GitHub Actions workflows for the Protein Binder Design p
   5. AlphaFold2 Multimer validation
 - **Features**: Native ARM64 execution, result packaging, progress tracking
 
-### 5. Jupyter Notebook Test (`jupyter-test.yml`)
+### 6. Jupyter Notebook Test (`jupyter-test.yml`)
 - **Trigger**: Changes to notebooks, PRs, manual dispatch
 - **Purpose**: Test Jupyter notebook functionality
 - **Features**:
@@ -68,6 +80,21 @@ These workflows are designed for self-hosted runners with the following labels:
 - **Docker**: ≥ 28.0 with NVIDIA Container Runtime
 
 ## Usage Examples
+
+### Validate ARM64 Platform
+```bash
+# Quick validation (default)
+gh workflow run arm64-validation.yml --ref main
+
+# Full validation with all tests
+gh workflow run arm64-validation.yml --ref main -f test_mode=full
+
+# Docker-only validation
+gh workflow run arm64-validation.yml --ref main -f test_mode=docker-only
+
+# Native installation validation
+gh workflow run arm64-validation.yml --ref main -f test_mode=native-only
+```
 
 ### Run System Health Check
 ```bash
@@ -129,6 +156,7 @@ gh workflow run jupyter-test.yml --ref main \
 
 Each workflow generates artifacts that are stored for 30 days:
 
+- **ARM64 Validation**: `arm64-validation-report-{run_number}`
 - **System Health**: `system-health-report-{run_number}`
 - **Native Install**: `arm64-installation-report-{component}-{run_number}`
 - **Docker Test**: `docker-compatibility-report-{platform}-{run_number}`

@@ -2,7 +2,9 @@ name: protein-binder-design
 
 services:
   ## AlphaFold2
-  ## Modified for single GPU ARM64 system
+  ## Modified for single GPU system
+  ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
+  ## For better performance on ARM64, use the native installation workflow.
   alphafold:
     image: nvcr.io/nim/deepmind/alphafold2:2.1
     pull_policy: always
@@ -22,10 +24,11 @@ services:
       - NIM_CACHE_PATH=/opt/nim/.cache
       - NIM_DISABLE_MODEL_DOWNLOAD=False
       - CUDA_VISIBLE_DEVICES=0
-    platform: linux/amd64
+    platform: linux/amd64  # NVIDIA NIM containers require AMD64
     profiles: ["alphafold"]
 
   ## RFDiffusion
+  ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
   rfdiffusion:
     image: nvcr.io/nim/ipd/rfdiffusion:2.0
     pull_policy: always
@@ -44,9 +47,11 @@ services:
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
       - CUDA_VISIBLE_DEVICES=0
-    platform: linux/amd64
+    platform: linux/amd64  # NVIDIA NIM containers require AMD64
     profiles: ["rfdiffusion"]
 
+  ## ProteinMPNN
+  ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
   proteinmpnn:
     image: nvcr.io/nim/ipd/proteinmpnn:1.0
     pull_policy: always
@@ -65,9 +70,11 @@ services:
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
       - CUDA_VISIBLE_DEVICES=0
-    platform: linux/amd64
+    platform: linux/amd64  # NVIDIA NIM containers require AMD64
     profiles: ["proteinmpnn"]
 
+  ## AlphaFold2-Multimer
+  ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
   alphafold-multimer:
     image: nvcr.io/nim/deepmind/alphafold2-multimer:2.1
     pull_policy: always
@@ -87,5 +94,5 @@ services:
       - NIM_CACHE_PATH=/opt/nim/.cache/
       - NIM_DISABLE_MODEL_DOWNLOAD=False
       - CUDA_VISIBLE_DEVICES=0
-    platform: linux/amd64
+    platform: linux/amd64  # NVIDIA NIM containers require AMD64
     profiles: ["alphafold-multimer"]
