@@ -2,7 +2,7 @@ name: protein-binder-design
 
 services:
   ## AlphaFold2
-  ## AlphaFold2 is pinned to GPU 0
+  ## Modified for single GPU ARM64 system
   alphafold:
     image: nvcr.io/nim/deepmind/alphafold2:2.1
     pull_policy: always
@@ -17,17 +17,15 @@ services:
           devices:
             - driver: "nvidia"
               capabilities: [gpu]
-              device_ids: ['0']
     environment:
       - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/opt/nim/.cache
-      - NIM_DISABLE_MODEL_DOWNLOAD=False ## Set this to True to disable model download.
+      - NIM_DISABLE_MODEL_DOWNLOAD=False
       - CUDA_VISIBLE_DEVICES=0
     platform: linux/amd64
-
+    profiles: ["alphafold"]
 
   ## RFDiffusion
-  ## RFDiffusion shares GPU 0 with AlphaFold2 (modified for single GPU setup)
   rfdiffusion:
     image: nvcr.io/nim/ipd/rfdiffusion:2.0
     pull_policy: always
@@ -42,12 +40,12 @@ services:
           devices:
             - driver: "nvidia"
               capabilities: [gpu]
-              device_ids: ['0']
     environment:
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
+      - CUDA_VISIBLE_DEVICES=0
     platform: linux/amd64
-
+    profiles: ["rfdiffusion"]
 
   proteinmpnn:
     image: nvcr.io/nim/ipd/proteinmpnn:1.0
@@ -63,11 +61,12 @@ services:
           devices:
             - driver: "nvidia"
               capabilities: [gpu]
-              device_ids: ['0']
     environment:
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
+      - CUDA_VISIBLE_DEVICES=0
     platform: linux/amd64
+    profiles: ["proteinmpnn"]
 
   alphafold-multimer:
     image: nvcr.io/nim/deepmind/alphafold2-multimer:2.1
@@ -83,10 +82,10 @@ services:
           devices:
             - driver: "nvidia"
               capabilities: [gpu]
-              device_ids: ['0']
     environment:
       - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/opt/nim/.cache/
       - NIM_DISABLE_MODEL_DOWNLOAD=False
       - CUDA_VISIBLE_DEVICES=0
     platform: linux/amd64
+    profiles: ["alphafold-multimer"]

@@ -23,16 +23,27 @@ The docker compose setup for this NIM Agent Blueprint requires the following spe
 
 ## Get Started
 
+- [🚀 Local Setup Guide](LOCAL_SETUP.md) - Comprehensive local development setup
+- [📋 System Verification Report](SYSTEM_VERIFICATION.md) - Check your system compatibility
 - [Deploy with Docker Compose](deploy)
 - [Deploy with Helm](protein-design-chart)
 - [Source code](src)
 
 ## Quick Start
+
+### Automated Setup (Recommended)
+```bash
+./setup_local.sh
+```
+
+### Manual Setup
 Deploy the blueprint using [Docker Compose](deploy) or [Helm](protein-design-chart)
 ```bash
 cd ./src
 jupyter notebook
 ```
+
+For detailed setup instructions, see [LOCAL_SETUP.md](LOCAL_SETUP.md)
 
 ## Set Up With Docker Compose
 
