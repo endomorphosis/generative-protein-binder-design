@@ -25,6 +25,8 @@ The docker compose setup for this NIM Agent Blueprint requires the following spe
 
 - [🚀 Local Setup Guide](LOCAL_SETUP.md) - Comprehensive local development setup
 - [📋 System Verification Report](SYSTEM_VERIFICATION.md) - Check your system compatibility
+- [⚙️ ARM64 Compatibility Guide](ARM64_COMPATIBILITY.md) - For ARM64 systems (Apple Silicon, ARM servers)
+- [🔧 ARM64 Native Installation](ARM64_NATIVE_INSTALLATION.md) - Advanced: Install tools natively on ARM64
 - [Deploy with Docker Compose](deploy)
 - [Deploy with Helm](protein-design-chart)
 - [Source code](src)

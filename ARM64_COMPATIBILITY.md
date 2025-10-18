@@ -38,12 +38,42 @@ For optimal performance, consider using cloud instances with AMD64 architecture 
 - Google Cloud Platform with NVIDIA GPUs
 - Azure NC-series instances
 
-### Option 3: Alternative Local Setup
-If the containers fail to run properly, consider alternative approaches:
+### Option 2: Native Installation (Complex but Possible)
+For those with significant technical expertise, you can install the tools directly on your ARM64 system. This approach avoids Docker platform compatibility issues but requires substantial time and effort.
 
-1. **Native Installation:** Install AlphaFold2, RFDiffusion, and ProteinMPNN directly on your system
-2. **ARM64 Compatible Alternatives:** Look for ARM64-native protein folding tools
-3. **VM with x86_64 Emulation:** Use QEMU to run a full x86_64 virtual machine
+**Installation Complexity:** High  
+**Time Required:** 2-7 days depending on experience  
+**Technical Expertise:** Advanced
+
+See the comprehensive guide: **[ARM64 Native Installation Guide](ARM64_NATIVE_INSTALLATION.md)**
+
+This guide includes:
+- Building AlphaFold2 from source for ARM64
+- Installing RFDiffusion natively with ARM64-compatible dependencies
+- Setting up ProteinMPNN manually
+- Creating wrapper scripts to integrate with the blueprint workflow
+- Troubleshooting common ARM64-specific issues
+
+**Pros:**
+- No Docker platform mismatch issues
+- Better performance than emulation
+- Full control over the environment
+- Can be optimized for your specific ARM64 system
+
+**Cons:**
+- Very time-consuming setup (days, not hours)
+- Requires advanced technical skills
+- Complex dependency management
+- May require building multiple packages from source
+- Debugging can be challenging
+- Limited community support for ARM64 builds
+
+### Option 3: Alternative Approaches
+If both Docker emulation and native installation prove problematic:
+
+1. **ARM64 Compatible Alternatives:** Look for ARM64-native protein folding tools
+2. **VM with x86_64 Emulation:** Use QEMU to run a full x86_64 virtual machine
+3. **Remote Development:** Use cloud-based development environments with x86_64 architecture
 
 ## Troubleshooting Tips
 
