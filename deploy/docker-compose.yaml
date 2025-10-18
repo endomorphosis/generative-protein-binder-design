@@ -3,6 +3,8 @@ name: protein-binder-design
 services:
   ## AlphaFold2
   ## AlphaFold2 is pinned to GPU 0
+  ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
+  ## For native ARM64 performance, consider using the native installation workflow instead.
   alphafold:
     image: nvcr.io/nim/deepmind/alphafold2:2.1
     pull_policy: always
@@ -23,11 +25,12 @@ services:
       - NIM_CACHE_PATH=/opt/nim/.cache
       - NIM_DISABLE_MODEL_DOWNLOAD=False ## Set this to True to disable model download.
       - CUDA_VISIBLE_DEVICES=0
-    platform: linux/amd64
+    platform: linux/amd64  # NVIDIA NIM containers require AMD64
 
 
   ## RFDiffusion
   ## RFDiffusion shares GPU 0 with AlphaFold2 (modified for single GPU setup)
+  ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
   rfdiffusion:
     image: nvcr.io/nim/ipd/rfdiffusion:2.0
     pull_policy: always
@@ -46,9 +49,11 @@ services:
     environment:
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
-    platform: linux/amd64
+    platform: linux/amd64  # NVIDIA NIM containers require AMD64
 
 
+  ## ProteinMPNN
+  ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
   proteinmpnn:
     image: nvcr.io/nim/ipd/proteinmpnn:1.0
     pull_policy: always
@@ -67,8 +72,10 @@ services:
     environment:
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
-    platform: linux/amd64
+    platform: linux/amd64  # NVIDIA NIM containers require AMD64
 
+  ## AlphaFold2-Multimer
+  ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
   alphafold-multimer:
     image: nvcr.io/nim/deepmind/alphafold2-multimer:2.1
     pull_policy: always
@@ -89,4 +96,4 @@ services:
       - NIM_CACHE_PATH=/opt/nim/.cache/
       - NIM_DISABLE_MODEL_DOWNLOAD=False
       - CUDA_VISIBLE_DEVICES=0
-    platform: linux/amd64
+    platform: linux/amd64  # NVIDIA NIM containers require AMD64
