@@ -2,6 +2,10 @@
 
 import { Job } from '@/lib/types'
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
+
+// Dynamically import the 3D viewer to avoid SSR issues with Three.js
+const ProteinViewer3D = dynamic(() => import('./ProteinViewer3D'), { ssr: false })
 
 interface Props {
   job: Job
@@ -11,6 +15,7 @@ export default function ResultsViewer({ job }: Props) {
   const [expandedDesign, setExpandedDesign] = useState<number | null>(0)
   const [show3DViewer, setShow3DViewer] = useState(false)
   const [selectedPDB, setSelectedPDB] = useState<string>('')
+  const [viewer3DTitle, setViewer3DTitle] = useState<string>('')
 
   if (job.status === 'failed') {
     return (
@@ -80,8 +85,9 @@ export default function ResultsViewer({ job }: Props) {
     URL.revokeObjectURL(url)
   }
 
-  const view3D = (pdbData: string) => {
+  const view3D = (pdbData: string, title: string = 'Protein Structure') => {
     setSelectedPDB(pdbData)
+    setViewer3DTitle(title)
     setShow3DViewer(true)
   }
 
@@ -119,12 +125,20 @@ export default function ResultsViewer({ job }: Props) {
         <div className="bg-gray-900 dark:bg-gray-950 rounded-md p-3 font-mono text-xs text-green-400 overflow-auto max-h-32">
           {extractPDB(job.results.target_structure) || 'Structure data available'}
         </div>
-        <button
-          onClick={() => downloadPDB(extractPDB(job.results.target_structure), `${job.job_id}_target.pdb`)}
-          className="mt-2 text-sm bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded"
-        >
-          Download Target PDB
-        </button>
+        <div className="flex gap-2 mt-2">
+          <button
+            onClick={() => downloadPDB(extractPDB(job.results.target_structure), `${job.job_id}_target.pdb`)}
+            className="flex-1 text-sm bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded"
+          >
+            Download Target PDB
+          </button>
+          <button
+            onClick={() => view3D(extractPDB(job.results.target_structure), 'Target Structure')}
+            className="flex-1 text-sm bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded"
+          >
+            🔬 View Target in 3D
+          </button>
+        </div>
       </div>
 
       {/* Binder Designs */}
@@ -224,7 +238,7 @@ export default function ResultsViewer({ job }: Props) {
                         📥 Download PDB
                       </button>
                       <button
-                        onClick={() => view3D(pdbData)}
+                        onClick={() => view3D(pdbData, `Design ${design.design_id + 1} - Complex Structure`)}
                         className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 px-4 rounded transition-colors"
                       >
                         🔬 View 3D
@@ -272,45 +286,13 @@ export default function ResultsViewer({ job }: Props) {
         </button>
       </div>
 
-      {/* Simple 3D Viewer Modal */}
-      {show3DViewer && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">3D Structure Viewer</h3>
-              <button
-                onClick={() => setShow3DViewer(false)}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-6">
-              <div className="bg-gray-100 dark:bg-gray-900 rounded-lg p-8 text-center">
-                <div className="text-6xl mb-4">🧬</div>
-                <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  3D visualization requires a molecular viewer library like py3Dmol or NGL Viewer.
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-500 mb-4">
-                  PDB Data Preview:
-                </p>
-                <pre className="bg-gray-900 text-green-400 p-4 rounded text-xs overflow-auto max-h-64 text-left font-mono">
-                  {selectedPDB}
-                </pre>
-                <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-                  <p>To view in 3D:</p>
-                  <ul className="list-disc list-inside mt-2 space-y-1">
-                    <li>Download the PDB file and open in PyMOL, ChimeraX, or VMD</li>
-                    <li>Use online tools like RCSB PDB 3D viewer</li>
-                    <li>Open in the Jupyter notebook with py3Dmol</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* 3D Viewer Modal */}
+      {show3DViewer && selectedPDB && (
+        <ProteinViewer3D
+          pdbData={selectedPDB}
+          title={viewer3DTitle}
+          onClose={() => setShow3DViewer(false)}
+        />
       )}
     </div>
   )
