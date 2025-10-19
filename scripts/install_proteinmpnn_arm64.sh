@@ -85,17 +85,22 @@ pip install \
     matplotlib \
     scipy
 
-# Clone ProteinMPNN repository
-INSTALL_DIR="${HOME}/proteinmpnn_arm64"
+# Get project root and create tools directory
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TOOLS_DIR="$PROJECT_ROOT/tools"
+INSTALL_DIR="$TOOLS_DIR/proteinmpnn"
+mkdir -p "$INSTALL_DIR"
+
 print_info "Installing ProteinMPNN to: $INSTALL_DIR"
 
-if [ -d "$INSTALL_DIR" ]; then
+if [ -d "$INSTALL_DIR/ProteinMPNN" ]; then
     print_warning "Directory exists. Updating..."
-    cd "$INSTALL_DIR"
+    cd "$INSTALL_DIR/ProteinMPNN"
     git pull
 else
-    git clone https://github.com/dauparas/ProteinMPNN.git "$INSTALL_DIR"
     cd "$INSTALL_DIR"
+    git clone https://github.com/dauparas/ProteinMPNN.git
+    cd ProteinMPNN
 fi
 
 # Create necessary directories
@@ -104,19 +109,19 @@ print_status "Created working directories"
 
 # Create run script
 RUN_SCRIPT="${INSTALL_DIR}/run_proteinmpnn_arm64.sh"
-cat > "$RUN_SCRIPT" << 'EOF'
+cat > "$RUN_SCRIPT" << EOF
 #!/bin/bash
 # ProteinMPNN ARM64 Runner Script
 
 # Activate conda environment
-eval "$(conda shell.bash hook)"
+eval "\$(conda shell.bash hook)"
 conda activate proteinmpnn_arm64
 
 # Set environment variables
-export PROTEINMPNN_HOME="${HOME}/proteinmpnn_arm64"
+export PROTEINMPNN_HOME="$INSTALL_DIR"
 
 # Run ProteinMPNN
-python "${PROTEINMPNN_HOME}/protein_mpnn_run.py" "$@"
+python "\${PROTEINMPNN_HOME}/ProteinMPNN/protein_mpnn_run.py" "\$@"
 EOF
 
 chmod +x "$RUN_SCRIPT"
@@ -221,6 +226,7 @@ echo "================================================"
 echo "  ✓ ProteinMPNN ARM64 Installation Complete!"
 echo "================================================"
 echo
+echo "Project root: $PROJECT_ROOT"
 echo "Installation directory: $INSTALL_DIR"
 echo
 echo "To use ProteinMPNN:"

@@ -72,9 +72,17 @@ check_installation() {
 
 source ~/miniforge3/bin/activate 2>/dev/null || print_warning "Miniforge not found"
 
-check_installation "AlphaFold2" "${HOME}/alphafold2_arm64" "alphafold2_arm64"
-check_installation "RFDiffusion" "${HOME}/rfdiffusion_arm64" "rfdiffusion_arm64"
-check_installation "ProteinMPNN" "${HOME}/proteinmpnn_arm64" "proteinmpnn_arm64"
+# Get project root directory
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TOOLS_DIR="$PROJECT_ROOT/tools"
+ENV_DIR="$PROJECT_ROOT/envs"
+
+# Create directories if they don't exist
+mkdir -p "$TOOLS_DIR" "$ENV_DIR"
+
+check_installation "AlphaFold2" "$TOOLS_DIR/alphafold2" "alphafold2_arm64"
+check_installation "RFDiffusion" "$TOOLS_DIR/rfdiffusion" "rfdiffusion_arm64"  
+check_installation "ProteinMPNN" "$TOOLS_DIR/proteinmpnn" "proteinmpnn_arm64"
 
 # Test 2: Test Python imports
 echo
@@ -104,15 +112,15 @@ test_imports() {
     done
 }
 
-if [ -d "${HOME}/alphafold2_arm64" ]; then
+if [ -d "$TOOLS_DIR/alphafold2" ]; then
     test_imports "alphafold2_arm64" "AlphaFold2" "jax" "haiku" "numpy" "Bio"
 fi
 
-if [ -d "${HOME}/rfdiffusion_arm64" ]; then
+if [ -d "$TOOLS_DIR/rfdiffusion" ]; then
     test_imports "rfdiffusion_arm64" "RFDiffusion" "torch" "numpy" "Bio"
 fi
 
-if [ -d "${HOME}/proteinmpnn_arm64" ]; then
+if [ -d "$TOOLS_DIR/proteinmpnn" ]; then
     test_imports "proteinmpnn_arm64" "ProteinMPNN" "torch" "numpy" "Bio"
 fi
 
@@ -142,16 +150,16 @@ test_tool_functionality() {
     fi
 }
 
-if [ -d "${HOME}/alphafold2_arm64" ]; then
-    test_tool_functionality "alphafold2_arm64" "AlphaFold2" "${HOME}/alphafold2_arm64/test_alphafold.py"
+if [ -d "$TOOLS_DIR/alphafold2" ]; then
+    test_tool_functionality "alphafold2_arm64" "AlphaFold2" "$TOOLS_DIR/alphafold2/test_alphafold.py"
 fi
 
-if [ -d "${HOME}/rfdiffusion_arm64" ]; then
-    test_tool_functionality "rfdiffusion_arm64" "RFDiffusion" "${HOME}/rfdiffusion_arm64/test_rfdiffusion.py"
+if [ -d "$TOOLS_DIR/rfdiffusion" ]; then
+    test_tool_functionality "rfdiffusion_arm64" "RFDiffusion" "$TOOLS_DIR/rfdiffusion/test_rfdiffusion.py"
 fi
 
-if [ -d "${HOME}/proteinmpnn_arm64" ]; then
-    test_tool_functionality "proteinmpnn_arm64" "ProteinMPNN" "${HOME}/proteinmpnn_arm64/test_proteinmpnn.py"
+if [ -d "$TOOLS_DIR/proteinmpnn" ]; then
+    test_tool_functionality "proteinmpnn_arm64" "ProteinMPNN" "$TOOLS_DIR/proteinmpnn/test_proteinmpnn.py"
 fi
 
 # Test 4: Test Docker images
@@ -198,7 +206,7 @@ if command -v nvidia-smi &> /dev/null; then
     print_info "GPUs detected: $GPU_COUNT"
     
     # Test GPU in conda environment
-    if [ -d "${HOME}/alphafold2_arm64" ]; then
+    if [ -d "$TOOLS_DIR/alphafold2" ]; then
         source ~/miniforge3/bin/activate
         conda activate alphafold2_arm64 2>/dev/null
         
@@ -287,7 +295,7 @@ Architecture: $(uname -m)
 Kernel: $(uname -r)
 
 Test Results:
-- Native Installations: $([ -d "${HOME}/alphafold2_arm64" ] && echo "OK" || echo "MISSING")
+- Native Installations: $([ -d "$TOOLS_DIR/alphafold2" ] && echo "OK" || echo "MISSING")
 - Python Imports: Tested
 - Docker Images: $(docker images | grep -c "protein-binder.*arm64" || echo "0") found
 - GPU Access: $(command -v nvidia-smi &> /dev/null && echo "Available" || echo "Not available")
@@ -297,7 +305,7 @@ Test Results:
 Errors Found: $ERRORS
 
 Installation Locations:
-$(ls -d ${HOME}/*arm64 2>/dev/null || echo "No installations found")
+$(ls -d $TOOLS_DIR/* 2>/dev/null || echo "No installations found in $TOOLS_DIR")
 
 Docker Images:
 $(docker images | grep "protein-binder.*arm64" || echo "No ARM64 images found")

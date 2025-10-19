@@ -89,17 +89,22 @@ pip install \
     decorator \
     e3nn
 
-# Clone RFDiffusion repository
-INSTALL_DIR="${HOME}/rfdiffusion_arm64"
+# Get project root and create tools directory
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TOOLS_DIR="$PROJECT_ROOT/tools"
+INSTALL_DIR="$TOOLS_DIR/rfdiffusion"
+mkdir -p "$INSTALL_DIR"
+
 print_info "Installing RFDiffusion to: $INSTALL_DIR"
 
-if [ -d "$INSTALL_DIR" ]; then
+if [ -d "$INSTALL_DIR/RFdiffusion" ]; then
     print_warning "Directory exists. Updating..."
-    cd "$INSTALL_DIR"
+    cd "$INSTALL_DIR/RFdiffusion"
     git pull
 else
-    git clone https://github.com/RosettaCommons/RFdiffusion.git "$INSTALL_DIR"
     cd "$INSTALL_DIR"
+    git clone https://github.com/RosettaCommons/RFdiffusion.git
+    cd RFdiffusion
 fi
 
 # Install RFDiffusion
@@ -107,14 +112,16 @@ print_info "Installing RFDiffusion package..."
 pip install -e .
 
 # Clone SE3 Transformer
-SE3_DIR="${HOME}/se3_transformer"
-if [ -d "$SE3_DIR" ]; then
+SE3_DIR="$TOOLS_DIR/se3_transformer"
+mkdir -p "$SE3_DIR"
+if [ -d "$SE3_DIR/SE3Transformer" ]; then
     print_warning "SE3 Transformer directory exists. Updating..."
-    cd "$SE3_DIR"
+    cd "$SE3_DIR/SE3Transformer"
     git pull
 else
-    git clone https://github.com/RosettaCommons/SE3Transformer.git "$SE3_DIR"
     cd "$SE3_DIR"
+    git clone https://github.com/RosettaCommons/SE3Transformer.git
+    cd SE3Transformer
 fi
 
 pip install -e .
@@ -128,20 +135,20 @@ print_status "Created models directory: $MODELS_DIR"
 # Create run script
 cd "$INSTALL_DIR"
 RUN_SCRIPT="${INSTALL_DIR}/run_rfdiffusion_arm64.sh"
-cat > "$RUN_SCRIPT" << 'EOF'
+cat > "$RUN_SCRIPT" << EOF
 #!/bin/bash
 # RFDiffusion ARM64 Runner Script
 
 # Activate conda environment
-eval "$(conda shell.bash hook)"
+eval "\$(conda shell.bash hook)"
 conda activate rfdiffusion_arm64
 
 # Set environment variables
-export RFDIFFUSION_HOME="${HOME}/rfdiffusion_arm64"
-export RFDIFFUSION_MODELS="${RFDIFFUSION_HOME}/models"
+export RFDIFFUSION_HOME="$INSTALL_DIR"
+export RFDIFFUSION_MODELS="$MODELS_DIR"
 
 # Run RFDiffusion
-python "${RFDIFFUSION_HOME}/scripts/run_inference.py" "$@"
+python "\${RFDIFFUSION_HOME}/RFdiffusion/scripts/run_inference.py" "\$@"
 EOF
 
 chmod +x "$RUN_SCRIPT"
@@ -252,6 +259,7 @@ echo "================================================"
 echo "  ✓ RFDiffusion ARM64 Installation Complete!"
 echo "================================================"
 echo
+echo "Project root: $PROJECT_ROOT"
 echo "Installation directory: $INSTALL_DIR"
 echo "Models directory: $MODELS_DIR"
 echo
