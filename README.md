@@ -50,7 +50,8 @@ This script will detect your system architecture and provide tailored recommenda
 - [Source code](src)
 
 #### ARM64-Specific Guides
-- [🚀 ARM64 Quick Start](ARM64_QUICK_START.md) - **Start here to continue ARM64 porting**
+- [📘 **ARM64 Complete Guide**](ARM64_COMPLETE_GUIDE.md) - **NEW: Comprehensive ARM64 support guide**
+- [🚀 ARM64 Quick Start](ARM64_QUICK_START.md) - Quick start for ARM64 systems
 - [✅ ARM64 Completion Checklist](ARM64_COMPLETION_CHECKLIST.md) - Step-by-step guide to complete ARM64 porting
 - [🤖 ARM64 Automation Summary](ARM64_AUTOMATION_SUMMARY.md) - Overview of automated ARM64 porting
 - [🏗️ ARM64 Deployment Guide](ARM64_DEPLOYMENT.md) - Complete guide for ARM64 deployment

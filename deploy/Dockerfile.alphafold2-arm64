@@ -1,0 +1,103 @@
+# AlphaFold2 ARM64 Native Dockerfile
+# This builds AlphaFold2 natively for ARM64/aarch64 architecture
+
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 AS builder
+
+# Set to non-interactive to avoid timezone prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    wget \
+    curl \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    libhdf5-dev \
+    libopenblas-dev \
+    liblapack-dev \
+    gfortran \
+    hmmer \
+    kalign \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set python3.10 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+# Install JAX for ARM64 with CUDA support
+# Note: Building JAX from source for ARM64 CUDA is complex, starting with CPU version
+RUN pip install --no-cache-dir \
+    "jax[cpu]>=0.4.13" \
+    jaxlib \
+    dm-haiku \
+    dm-tree \
+    ml-collections \
+    numpy \
+    pandas \
+    scipy \
+    absl-py
+
+# Install AlphaFold dependencies
+RUN pip install --no-cache-dir \
+    biopython \
+    chex \
+    docker \
+    immutabledict \
+    tensorflow-cpu \
+    && rm -rf ~/.cache/pip
+
+# Clone AlphaFold repository
+WORKDIR /opt
+RUN git clone https://github.com/deepmind/alphafold.git
+
+WORKDIR /opt/alphafold
+
+# Install AlphaFold
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Create data directories
+RUN mkdir -p /opt/alphafold/data
+
+# Runtime stage
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3-pip \
+    hmmer \
+    kalign \
+    aria2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python packages from builder
+COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
+COPY --from=builder /opt/alphafold /opt/alphafold
+
+WORKDIR /opt/alphafold
+
+# Set environment variables
+ENV PYTHONPATH="/opt/alphafold:${PYTHONPATH}"
+ENV PATH="/opt/alphafold:${PATH}"
+
+# Create directory for model weights
+RUN mkdir -p /models
+
+# Expose port for inference server
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python3 -c "import jax; import haiku; print('AlphaFold2 ARM64 OK')" || exit 1
+
+# Default command
+CMD ["python3", "-m", "alphafold.run_alphafold", "--help"]

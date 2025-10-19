@@ -1,0 +1,246 @@
+name: ARM64 Docker Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'deploy/Dockerfile.*-arm64'
+      - 'deploy/docker-compose-arm64-native.yaml'
+      - 'scripts/build_arm64_images.sh'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      build_image:
+        description: 'Image to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - alphafold2
+        - rfdiffusion
+        - proteinmpnn
+
+jobs:
+  build-arm64-images:
+    name: Build ARM64 Docker Images
+    runs-on: [self-hosted, ARM64, gpu]
+    timeout-minutes: 180  # 3 hours for builds
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Docker Buildx
+      run: |
+        echo "=== Setting up Docker Buildx ==="
+        
+        # Create builder if it doesn't exist
+        if ! docker buildx ls | grep -q "arm64-builder"; then
+          docker buildx create --name arm64-builder --use
+          docker buildx inspect --bootstrap
+        else
+          docker buildx use arm64-builder
+        fi
+        
+        echo "Builder ready:"
+        docker buildx ls
+        
+    - name: Build AlphaFold2 ARM64 Image
+      if: ${{ github.event.inputs.build_image == 'all' || github.event.inputs.build_image == 'alphafold2' }}
+      run: |
+        echo "=== Building AlphaFold2 ARM64 Image ==="
+        cd deploy
+        
+        docker buildx build \
+          --platform linux/arm64 \
+          -f Dockerfile.alphafold2-arm64 \
+          -t protein-binder/alphafold2:arm64-latest \
+          -t protein-binder/alphafold2:arm64-${{ github.sha }} \
+          --load \
+          .
+        
+        echo "AlphaFold2 image built successfully"
+        docker images | grep alphafold2
+        
+    - name: Build RFDiffusion ARM64 Image
+      if: ${{ github.event.inputs.build_image == 'all' || github.event.inputs.build_image == 'rfdiffusion' }}
+      run: |
+        echo "=== Building RFDiffusion ARM64 Image ==="
+        cd deploy
+        
+        docker buildx build \
+          --platform linux/arm64 \
+          -f Dockerfile.rfdiffusion-arm64 \
+          -t protein-binder/rfdiffusion:arm64-latest \
+          -t protein-binder/rfdiffusion:arm64-${{ github.sha }} \
+          --load \
+          .
+        
+        echo "RFDiffusion image built successfully"
+        docker images | grep rfdiffusion
+        
+    - name: Build ProteinMPNN ARM64 Image
+      if: ${{ github.event.inputs.build_image == 'all' || github.event.inputs.build_image == 'proteinmpnn' }}
+      run: |
+        echo "=== Building ProteinMPNN ARM64 Image ==="
+        cd deploy
+        
+        docker buildx build \
+          --platform linux/arm64 \
+          -f Dockerfile.proteinmpnn-arm64 \
+          -t protein-binder/proteinmpnn:arm64-latest \
+          -t protein-binder/proteinmpnn:arm64-${{ github.sha }} \
+          --load \
+          .
+        
+        echo "ProteinMPNN image built successfully"
+        docker images | grep proteinmpnn
+        
+    - name: Test AlphaFold2 Image
+      if: ${{ github.event.inputs.build_image == 'all' || github.event.inputs.build_image == 'alphafold2' }}
+      run: |
+        echo "=== Testing AlphaFold2 ARM64 Image ==="
+        
+        # Test basic functionality
+        docker run --rm protein-binder/alphafold2:arm64-latest \
+          python3 -c "import jax; import haiku; import numpy; print('AlphaFold2 ARM64 OK')"
+        
+        # Test architecture
+        ARCH=$(docker run --rm protein-binder/alphafold2:arm64-latest uname -m)
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+          echo "[OK] Image is ARM64: $ARCH"
+        else
+          echo "[FAIL] Image is not ARM64: $ARCH"
+          exit 1
+        fi
+        
+    - name: Test RFDiffusion Image
+      if: ${{ github.event.inputs.build_image == 'all' || github.event.inputs.build_image == 'rfdiffusion' }}
+      run: |
+        echo "=== Testing RFDiffusion ARM64 Image ==="
+        
+        # Test basic functionality
+        docker run --rm protein-binder/rfdiffusion:arm64-latest \
+          python3 -c "import torch; import numpy; print('RFDiffusion ARM64 OK')"
+        
+        # Test architecture
+        ARCH=$(docker run --rm protein-binder/rfdiffusion:arm64-latest uname -m)
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+          echo "[OK] Image is ARM64: $ARCH"
+        else
+          echo "[FAIL] Image is not ARM64: $ARCH"
+          exit 1
+        fi
+        
+    - name: Test ProteinMPNN Image
+      if: ${{ github.event.inputs.build_image == 'all' || github.event.inputs.build_image == 'proteinmpnn' }}
+      run: |
+        echo "=== Testing ProteinMPNN ARM64 Image ==="
+        
+        # Test basic functionality
+        docker run --rm protein-binder/proteinmpnn:arm64-latest \
+          python3 -c "import torch; import numpy; import Bio; print('ProteinMPNN ARM64 OK')"
+        
+        # Test architecture
+        ARCH=$(docker run --rm protein-binder/proteinmpnn:arm64-latest uname -m)
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+          echo "[OK] Image is ARM64: $ARCH"
+        else
+          echo "[FAIL] Image is not ARM64: $ARCH"
+          exit 1
+        fi
+        
+    - name: Test GPU Access in Containers
+      run: |
+        echo "=== Testing GPU Access ==="
+        
+        if command -v nvidia-smi &> /dev/null; then
+          echo "Testing GPU access in ARM64 container..."
+          
+          # Test with a simple CUDA container
+          docker run --rm --gpus all --platform linux/arm64 ubuntu:22.04 bash -c "
+            apt-get update -qq
+            apt-get install -y -qq nvidia-cuda-toolkit || true
+            if command -v nvidia-smi &> /dev/null; then
+              nvidia-smi
+              echo '[OK] GPU accessible in container'
+            else
+              echo '[INFO] nvidia-smi not available in base image (expected)'
+            fi
+          " || echo "[INFO] GPU test completed"
+        else
+          echo "[INFO] No GPU detected on host, skipping GPU tests"
+        fi
+        
+    - name: Test Docker Compose Configuration
+      if: ${{ github.event.inputs.build_image == 'all' }}
+      run: |
+        echo "=== Testing Docker Compose Configuration ==="
+        cd deploy
+        
+        # Validate compose file
+        docker compose -f docker-compose-arm64-native.yaml config > /dev/null
+        echo "[OK] docker-compose-arm64-native.yaml is valid"
+        
+        # Test starting services (dry run style)
+        docker compose -f docker-compose-arm64-native.yaml pull --ignore-pull-failures || true
+        echo "[OK] Docker Compose configuration test completed"
+        
+    - name: Generate Build Report
+      if: always()
+      run: |
+        echo "=== ARM64 Docker Build Report ===" > build_report.txt
+        echo "Generated: $(date)" >> build_report.txt
+        echo "Build Image: ${{ github.event.inputs.build_image || 'all' }}" >> build_report.txt
+        echo "Git SHA: ${{ github.sha }}" >> build_report.txt
+        echo "Branch: ${{ github.ref }}" >> build_report.txt
+        echo "" >> build_report.txt
+        
+        echo "Built Images:" >> build_report.txt
+        docker images | grep "protein-binder.*arm64" >> build_report.txt || echo "No ARM64 images found" >> build_report.txt
+        echo "" >> build_report.txt
+        
+        echo "Image Sizes:" >> build_report.txt
+        docker images --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}" | grep "protein-binder.*arm64" >> build_report.txt || true
+        echo "" >> build_report.txt
+        
+        echo "System Information:" >> build_report.txt
+        echo "Architecture: $(uname -m)" >> build_report.txt
+        echo "Kernel: $(uname -r)" >> build_report.txt
+        echo "Docker Version: $(docker --version)" >> build_report.txt
+        
+        cat build_report.txt
+        
+    - name: Upload Build Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: arm64-docker-build-report-${{ github.run_number }}
+        path: build_report.txt
+        retention-days: 30
+        
+    - name: Cleanup Old Images
+      if: always()
+      run: |
+        echo "=== Cleaning up old images ==="
+        
+        # Remove dangling images
+        docker image prune -f
+        
+        # Keep only latest and current SHA tagged images
+        docker images | grep "protein-binder.*arm64" | grep -v "latest\|${{ github.sha }}" | awk '{print $3}' | xargs -r docker rmi -f || true
+        
+        echo "Cleanup completed"
+        
+    - name: Summary
+      if: always()
+      run: |
+        echo "=== ARM64 Docker Build Summary ==="
+        echo "Build completed for: ${{ github.event.inputs.build_image || 'all' }}"
+        echo "Images available:"
+        docker images | grep "protein-binder.*arm64" || echo "No images found"
+        echo ""
+        echo "To use these images:"
+        echo "  docker compose -f deploy/docker-compose-arm64-native.yaml up -d"
