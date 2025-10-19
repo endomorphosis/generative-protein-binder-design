@@ -10,7 +10,7 @@ Your ARM64 GitHub Actions self-hosted runner with NVIDIA GPU support is **fully 
 
 ### **Local ARM64 Port Verification**
 ```bash
-./verify_arm64_port.sh
+../scripts/verify_arm64_port.sh
 ```
 **Result**: ✅ **ALL CHECKS PASSED** - ARM64 porting is complete and verified!
 
@@ -152,7 +152,7 @@ gh workflow run protein-design-pipeline.yml -f use_native=true -f target_protein
 
 ### **Check Runner Health**
 ```bash
-./check_runner_status.sh
+../scripts/check_runner_status.sh
 ```
 
 ### **Monitor Workflow Execution**
@@ -201,8 +201,8 @@ Your ARM64 GitHub Actions setup is now **production-ready** for:
 - **Runner Dashboard**: https://github.com/hallucinate-llc/generative-protein-binder-design/settings/actions/runners
 - **Workflow Actions**: https://github.com/hallucinate-llc/generative-protein-binder-design/actions  
 - **Documentation**: `.github/workflows/README.md`
-- **Status Script**: `./check_runner_status.sh`
-- **Local Verification**: `./verify_arm64_port.sh`
+- **Status Script**: `../scripts/check_runner_status.sh`
+- **Local Verification**: `../scripts/verify_arm64_port.sh`
 
 ---
 

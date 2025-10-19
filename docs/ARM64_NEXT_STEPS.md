@@ -123,7 +123,7 @@ git push origin copilot/port-project-to-arm64
 ### Via Command Line
 ```bash
 # Check runner status
-./check_runner_status.sh
+../scripts/check_runner_status.sh
 
 # View workflow runs (requires gh CLI)
 gh run list --workflow=arm64-complete-port.yml
@@ -222,7 +222,7 @@ on:
 ## Troubleshooting
 
 ### Workflow Doesn't Start
-- Check runner is online: `./check_runner_status.sh`
+- Check runner is online: `../scripts/check_runner_status.sh`
 - Verify branch name matches: `copilot/port-project-to-arm64`
 - Check workflow file syntax: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/arm64-complete-port.yml'))"`
 
@@ -294,8 +294,8 @@ The ARM64 porting is complete when:
 If you encounter issues:
 
 1. Review workflow logs in GitHub Actions
-2. Check runner status with `./check_runner_status.sh`
-3. Run verification script: `./verify_arm64_port.sh`
+2. Check runner status with `../scripts/check_runner_status.sh`
+3. Run verification script: `../scripts/verify_arm64_port.sh`
 4. Check documentation in `.github/workflows/README.md`
 5. Review ARM64 deployment guide: `ARM64_DEPLOYMENT.md`
 

@@ -29,7 +29,7 @@ The ARM64 porting infrastructure is in place and verified. This checklist guides
   
   **Or use the helper script:**
   ```bash
-  ./continue_arm64_port.sh
+  ../scripts/continue_arm64_port.sh
   # Select option 'f' to trigger workflow
   ```
   
@@ -50,7 +50,7 @@ The ARM64 porting infrastructure is in place and verified. This checklist guides
   gh run watch
   
   # Or check runner status
-  ./check_runner_status.sh
+  ../scripts/check_runner_status.sh
   ```
   
   **Via web interface:**
@@ -198,7 +198,7 @@ The ARM64 porting infrastructure is in place and verified. This checklist guides
   ```bash
   # Test services are accessible
   # Run health checks
-  ./check_runner_status.sh
+  ../scripts/check_runner_status.sh
   
   # Test with small workload
   gh workflow run system-health.yml -f deep_check=true
@@ -281,7 +281,7 @@ The ARM64 porting is complete when:
 **Check:**
 ```bash
 # Verify runner is online
-./check_runner_status.sh
+../scripts/check_runner_status.sh
 
 # Check workflow syntax
 python3 -c "import yaml; yaml.safe_load(open('.github/workflows/arm64-complete-port.yml'))"
@@ -311,19 +311,19 @@ git branch
 
 ```bash
 # Interactive helper to continue ARM64 porting
-./continue_arm64_port.sh
+../scripts/continue_arm64_port.sh
 
 # Interactive workflow trigger helper
-./trigger_arm64_workflow.sh
+../scripts/trigger_arm64_workflow.sh
 
 # Check current platform
 uname -m
 
 # Run platform detection
-./detect_platform.sh
+../scripts/detect_platform.sh
 
 # Verify ARM64 porting
-./verify_arm64_port.sh
+../scripts/verify_arm64_port.sh
 
 # Trigger completion workflow (manual)
 gh workflow run arm64-complete-port.yml -f run_full_pipeline=true -f run_validation_tests=true
@@ -358,11 +358,11 @@ gh workflow run system-health.yml -f deep_check=true
 For issues or questions:
 1. Check documentation in ARM64_*.md files
 2. Review workflow logs in GitHub Actions
-3. Run `./verify_arm64_port.sh` for diagnostics
-4. Check `./detect_platform.sh` for platform info
+3. Run `../scripts/verify_arm64_port.sh` for diagnostics
+4. Check `../scripts/detect_platform.sh` for platform info
 
 ---
 
-**Start Here:** Run `./continue_arm64_port.sh` for an interactive guide to complete the ARM64 porting process.
+**Start Here:** Run `../scripts/continue_arm64_port.sh` for an interactive guide to complete the ARM64 porting process.
 
 **Status:** Ready to execute Phase 1 (Workflow Execution)

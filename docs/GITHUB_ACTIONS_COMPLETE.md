@@ -78,7 +78,7 @@
 
 ### **Run Status Check Script**
 ```bash
-./check_runner_status.sh
+../scripts/check_runner_status.sh
 ```
 
 ### **Monitor Runner Logs**
@@ -175,7 +175,7 @@ cd /home/barberb/actions-runner
 ## 📞 Support
 
 - **Runner Status**: Visit GitHub Actions tab in repository
-- **System Resources**: Run `./check_runner_status.sh`  
+- **System Resources**: Run `../scripts/check_runner_status.sh`  
 - **Logs**: Check `/home/barberb/actions-runner/_diag/`
 - **Documentation**: See `.github/workflows/README.md`
 

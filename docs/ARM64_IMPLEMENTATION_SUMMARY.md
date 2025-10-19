@@ -307,7 +307,7 @@ gh workflow run protein-design-pipeline.yml -f use_native=true
 
 1. **Check your system**:
    ```bash
-   ./detect_platform.sh
+   ../scripts/detect_platform.sh
    ```
 
 2. **Choose deployment method**:

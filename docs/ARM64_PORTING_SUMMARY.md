@@ -174,7 +174,7 @@ Prevents committing:
 
 1. **Platform Detection:**
    ```bash
-   ./detect_platform.sh
+   ../scripts/detect_platform.sh
    ```
 
 2. **Docker Validation:**

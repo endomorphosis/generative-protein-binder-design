@@ -32,7 +32,7 @@ You should see the "ARM64 Complete Porting Workflow" running.
 ### Option 2: Command Line
 ```bash
 # Check runner status
-./check_runner_status.sh
+../scripts/check_runner_status.sh
 
 # List recent workflow runs (requires gh CLI)
 gh run list --workflow=arm64-complete-port.yml --limit 5
@@ -167,7 +167,7 @@ on:
 **Solutions:**
 ```bash
 # Check runner status
-./check_runner_status.sh
+../scripts/check_runner_status.sh
 
 # Validate workflow YAML
 python3 -c "import yaml; yaml.safe_load(open('.github/workflows/arm64-complete-port.yml'))"
@@ -217,9 +217,9 @@ git branch
 If you encounter any issues:
 
 1. Check workflow logs in GitHub Actions
-2. Run local verification: `./verify_arm64_port.sh`
-3. Check runner status: `./check_runner_status.sh`
-4. Review platform detection: `./detect_platform.sh`
+2. Run local verification: `../scripts/verify_arm64_port.sh`
+3. Check runner status: `../scripts/check_runner_status.sh`
+4. Review platform detection: `../scripts/detect_platform.sh`
 
 ---
 

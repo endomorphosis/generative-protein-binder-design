@@ -6,7 +6,7 @@ on:
     paths:
       - '.github/workflows/arm64-validation.yml'
       - 'deploy/docker-compose*.yaml'
-      - '*.sh'
+      - 'scripts/*.sh'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -242,9 +242,9 @@ jobs:
         
         # Check shell scripts exist and are executable
         scripts=(
-          "setup_local.sh"
-          "setup_github_runner.sh"
-          "check_runner_status.sh"
+          "scripts/setup_local.sh"
+          "scripts/setup_github_runner.sh"
+          "scripts/check_runner_status.sh"
           "deploy/run_single_gpu.sh"
         )
         
