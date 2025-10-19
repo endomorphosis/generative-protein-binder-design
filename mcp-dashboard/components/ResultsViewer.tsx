@@ -108,7 +108,7 @@ export default function ResultsViewer({ job }: Props) {
             <span className="font-medium">Duration:</span> {calculateDuration()}
           </div>
           <div>
-            <span className="font-medium">Designs:</span> {job.results.designs.length}
+            <span className="font-medium">Designs:</span> {job.results?.designs.length || 0}
           </div>
           <div className="col-span-2">
             <span className="font-medium">Completed:</span> {new Date(job.updated_at).toLocaleString()}
@@ -123,17 +123,17 @@ export default function ResultsViewer({ job }: Props) {
           <h4 className="font-semibold text-gray-900 dark:text-white">Target Structure</h4>
         </div>
         <div className="bg-gray-900 dark:bg-gray-950 rounded-md p-3 font-mono text-xs text-green-400 overflow-auto max-h-32">
-          {extractPDB(job.results.target_structure) || 'Structure data available'}
+          {extractPDB(job.results?.target_structure) || 'Structure data available'}
         </div>
         <div className="flex gap-2 mt-2">
           <button
-            onClick={() => downloadPDB(extractPDB(job.results.target_structure), `${job.job_id}_target.pdb`)}
+            onClick={() => downloadPDB(extractPDB(job.results?.target_structure), `${job.job_id}_target.pdb`)}
             className="flex-1 text-sm bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded"
           >
             Download Target PDB
           </button>
           <button
-            onClick={() => view3D(extractPDB(job.results.target_structure), 'Target Structure')}
+            onClick={() => view3D(extractPDB(job.results?.target_structure), 'Target Structure')}
             className="flex-1 text-sm bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded"
           >
             🔬 View Target in 3D
@@ -146,12 +146,12 @@ export default function ResultsViewer({ job }: Props) {
         <div className="flex items-center gap-2 mb-3">
           <span className="text-2xl">🎯</span>
           <h4 className="font-semibold text-gray-900 dark:text-white">
-            Binder Designs ({job.results.designs.length} generated)
+            Binder Designs ({job.results?.designs.length || 0} generated)
           </h4>
         </div>
         
         <div className="space-y-3">
-          {job.results.designs.map((design) => {
+          {(job.results?.designs || []).map((design) => {
             const sequence = extractSequence(design.sequence)
             const pdbData = extractPDB(design.complex_structure)
             const isExpanded = expandedDesign === design.design_id

@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pyth
 
 # Copy application code
 COPY server.py .
+COPY model_backends.py .
 
 # Expose port
 EXPOSE 8000
