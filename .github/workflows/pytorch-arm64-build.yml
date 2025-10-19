@@ -1,0 +1,243 @@
+name: PyTorch ARM64 Source Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      cuda_version:
+        description: 'CUDA version to build with'
+        required: false
+        default: '11.8'
+        type: string
+      use_cuda:
+        description: 'Build with CUDA support'
+        required: false
+        default: true
+        type: boolean
+      upload_artifact:
+        description: 'Upload built wheel as artifact'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  build-pytorch-arm64:
+    name: Build PyTorch for ARM64
+    runs-on: self-hosted
+    timeout-minutes: 240  # 4 hours max
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Check system architecture
+        run: |
+          echo "Architecture: $(uname -m)"
+          echo "Kernel: $(uname -r)"
+          echo "OS: $(lsb_release -d || cat /etc/os-release | grep PRETTY_NAME)"
+      
+      - name: Install build dependencies
+        run: |
+          echo "Installing build dependencies..."
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            python3-dev \
+            python3-pip \
+            python3-venv \
+            libopenblas-dev \
+            liblapack-dev \
+            gfortran \
+            ninja-build
+      
+      - name: Check CUDA availability
+        id: cuda_check
+        run: |
+          if command -v nvcc &> /dev/null; then
+            echo "cuda_available=true" >> $GITHUB_OUTPUT
+            echo "CUDA available: $(nvcc --version | grep release)"
+          else
+            echo "cuda_available=false" >> $GITHUB_OUTPUT
+            echo "CUDA not available, building CPU-only version"
+          fi
+      
+      - name: Setup Python environment
+        run: |
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install numpy pyyaml mkl mkl-include setuptools cmake cffi typing_extensions
+      
+      - name: Generate PyTorch build script
+        run: |
+          export PYTHONPATH="${GITHUB_WORKSPACE}/src:$PYTHONPATH"
+          python3 -m arm64_cuda_fallback pytorch-build --generate-script
+          
+          # Show the generated script
+          echo "Generated build script:"
+          cat ~/pytorch_build/pytorch_arm64_build.sh
+      
+      - name: Execute PyTorch build
+        id: build
+        run: |
+          echo "Starting PyTorch build (this will take 1-3 hours)..."
+          
+          # Set build configuration based on inputs
+          export USE_CUDA=${{ inputs.use_cuda && steps.cuda_check.outputs.cuda_available == 'true' && '1' || '0' }}
+          export CUDA_VERSION=${{ inputs.cuda_version }}
+          
+          # Run the build script
+          bash ~/pytorch_build/pytorch_arm64_build.sh 2>&1 | tee pytorch_build.log
+          
+          # Check if build succeeded
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo "build_success=true" >> $GITHUB_OUTPUT
+            echo "PyTorch build completed successfully!"
+          else
+            echo "build_success=false" >> $GITHUB_OUTPUT
+            echo "PyTorch build failed!"
+            exit 1
+          fi
+      
+      - name: Verify PyTorch installation
+        if: steps.build.outputs.build_success == 'true'
+        run: |
+          echo "Verifying PyTorch installation..."
+          python3 -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+          python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+          python3 -c "import torch; print(f'CUDA version: {torch.version.cuda if torch.cuda.is_available() else \"N/A\"}')"
+          
+          # Test basic tensor operations
+          python3 -c "import torch; x = torch.randn(100, 100); y = torch.matmul(x, x); print(f'Tensor test: OK (shape: {y.shape})')"
+      
+      - name: Create build report
+        if: always()
+        run: |
+          cat > pytorch_build_report.txt << 'EOF'
+          PyTorch ARM64 Build Report
+          ==========================
+          
+          Build Date: $(date)
+          Architecture: $(uname -m)
+          Kernel: $(uname -r)
+          
+          Build Configuration:
+          - CUDA Support: ${{ inputs.use_cuda }}
+          - CUDA Version: ${{ inputs.cuda_version }}
+          - CUDA Available: ${{ steps.cuda_check.outputs.cuda_available }}
+          
+          Build Status: ${{ steps.build.outputs.build_success == 'true' && 'SUCCESS' || 'FAILED' }}
+          
+          System Information:
+          $(cat /proc/cpuinfo | grep "model name" | head -1)
+          $(free -h | grep Mem)
+          
+          Build Duration: Check workflow logs
+          EOF
+          
+          cat pytorch_build_report.txt
+      
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-build-log-${{ github.run_number }}
+          path: |
+            pytorch_build.log
+            pytorch_build_report.txt
+          retention-days: 30
+      
+      - name: Find and upload PyTorch wheel
+        if: steps.build.outputs.build_success == 'true' && inputs.upload_artifact
+        run: |
+          # Find the built wheel
+          WHEEL_PATH=$(find ~/pytorch_build/pytorch/dist -name "torch-*.whl" | head -1)
+          
+          if [ -n "$WHEEL_PATH" ]; then
+            echo "Found PyTorch wheel: $WHEEL_PATH"
+            mkdir -p pytorch_wheel
+            cp "$WHEEL_PATH" pytorch_wheel/
+            ls -lh pytorch_wheel/
+          else
+            echo "Warning: PyTorch wheel not found in expected location"
+            # Search more broadly
+            find ~/pytorch_build -name "*.whl" -type f
+          fi
+      
+      - name: Upload PyTorch wheel artifact
+        if: steps.build.outputs.build_success == 'true' && inputs.upload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytorch-arm64-wheel-${{ github.run_number }}
+          path: pytorch_wheel/*.whl
+          retention-days: 90
+      
+      - name: Test with arm64_cuda_fallback module
+        if: steps.build.outputs.build_success == 'true'
+        run: |
+          echo "Testing PyTorch with arm64_cuda_fallback module..."
+          export PYTHONPATH="${GITHUB_WORKSPACE}/src:$PYTHONPATH"
+          
+          python3 << 'PYEOF'
+          from arm64_cuda_fallback import PyTorchFallback
+          
+          print("Testing PyTorch fallback with newly built PyTorch...")
+          fallback = PyTorchFallback(verbose=True)
+          
+          if fallback.available:
+              device = fallback.get_device()
+              print(f"\nDevice: {device}")
+              
+              info = fallback.get_device_info()
+              print(f"\nDevice Info:")
+              for key, value in info.items():
+                  print(f"  {key}: {value}")
+              
+              print("\n✓ PyTorch fallback test passed!")
+          else:
+              print("✗ PyTorch not available after build")
+              exit(1)
+          PYEOF
+      
+      - name: Build summary
+        if: always()
+        run: |
+          echo "## PyTorch ARM64 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Architecture**: $(uname -m)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Status**: ${{ steps.build.outputs.build_success == 'true' && '✅ SUCCESS' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **CUDA Support**: ${{ inputs.use_cuda }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **CUDA Available**: ${{ steps.cuda_check.outputs.cuda_available }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.build.outputs.build_success }}" == "true" ]; then
+            echo "### ✅ Build Succeeded" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "PyTorch has been successfully built from source for ARM64." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Artifacts:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Build log available in artifacts" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ inputs.upload_artifact }}" == "true" ]; then
+              echo "- PyTorch wheel available in artifacts" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the build log artifact for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  notify-completion:
+    name: Notify Build Completion
+    needs: build-pytorch-arm64
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Build completion notification
+        run: |
+          echo "PyTorch ARM64 build workflow completed"
+          echo "Status: ${{ needs.build-pytorch-arm64.result }}"
+          echo ""
+          echo "Check the artifacts for:"
+          echo "  - Build logs"
+          echo "  - PyTorch wheel (if build succeeded)"
+          echo "  - Build report"

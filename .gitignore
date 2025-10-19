@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.next/
 .Python
 build/
 develop-eggs/
@@ -21,6 +22,9 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Node Modules
+node_modules/
 
 # Virtual environments
 .venv/
