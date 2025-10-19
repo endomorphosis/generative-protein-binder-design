@@ -79,6 +79,35 @@ What it does:
 
 ## Build Scripts
 
+### PyTorch ARM64 Source Builder
+
+**`build_pytorch_arm64_blackwell.sh`** - Build PyTorch from source with CUDA support for ARM64
+
+```bash
+./scripts/build_pytorch_arm64_blackwell.sh
+```
+
+Features:
+- Builds PyTorch with CUDA support for NVIDIA GB10 (Blackwell) GPUs
+- Supports compute capability 12.1
+- Uses OpenBLAS instead of MKL for ARM64 compatibility
+- Includes NCCL patches for proper CUDA architecture support
+- 2-3 hour build time
+
+**`monitor_pytorch_build.sh`** - Real-time build monitoring dashboard
+
+```bash
+./scripts/monitor_pytorch_build.sh
+```
+
+Features:
+- Live process monitoring
+- Disk usage tracking
+- Build phase detection
+- Interactive dashboard with 10-second refresh
+
+See `scripts/PYTORCH_BUILD_README.md` for detailed documentation.
+
 ### Docker Image Builder
 
 **`build_arm64_images.sh`** - Build ARM64-native Docker images
