@@ -1,6 +1,6 @@
 # ARM64 CUDA Fallback Solutions
 
-This document explains the two fallback options available for ARM64 systems without native CUDA support.
+This document explains the **four fallback options** available for ARM64 systems without native CUDA support.
 
 ## Problem Statement
 
@@ -8,15 +8,27 @@ ARM64 systems (including Apple Silicon and ARM-based servers) currently have lim
 
 ## Solution Overview
 
-We've implemented **two fallback solutions** that can be used until upstream CUDA support is complete:
+We've implemented **four fallback solutions** that can be used until upstream CUDA support is complete:
 
-### Solution 1: Automatic CPU Fallback (Recommended)
+### Solution 1: Automatic CPU Fallback (Recommended for Development)
 - **What**: Automatically detects CUDA availability and falls back to CPU
 - **When to use**: Development, testing, light workloads
 - **Pros**: Simple, reliable, works everywhere
 - **Cons**: Slower than GPU
 
-### Solution 2: Cloud GPU Alternative
+### Solution 2: NVIDIA NGC Containers (Recommended for Production)
+- **What**: Use NVIDIA NGC containers via Docker emulation or cloud instances
+- **When to use**: Production workloads, need GPU acceleration
+- **Pros**: Official NVIDIA containers, full software stack included
+- **Cons**: Requires NGC API key, may need cloud instances for best performance
+
+### Solution 3: PyTorch Source Build (Advanced Users)
+- **What**: Build PyTorch from source with ARM64 CUDA support
+- **When to use**: Need native ARM64 CUDA, have build expertise
+- **Pros**: Native performance, full control
+- **Cons**: Complex, time-consuming (1-3 hours), requires expertise
+
+### Solution 4: Cloud GPU Alternative
 - **What**: Use cloud instances with native AMD64 CUDA support
 - **When to use**: Production, heavy workloads, time-sensitive tasks
 - **Pros**: Full GPU performance, no compatibility issues
@@ -151,7 +163,148 @@ Key optimizations:
 4. **Quantize models** - Use int8 or float16 when possible
 5. **Use smaller models** - Consider distilled versions
 
-### Solution 2: Cloud GPU Alternative
+### Solution 2: NVIDIA NGC Containers
+
+NVIDIA NGC (NVIDIA GPU Cloud) provides pre-built containers with optimized software stacks for protein design workflows.
+
+#### Prerequisites
+
+```bash
+# Set NGC API key (get from https://catalog.ngc.nvidia.com/)
+export NGC_CLI_API_KEY=your_api_key_here
+
+# Login to NGC registry
+docker login nvcr.io --username='$oauthtoken' --password="${NGC_CLI_API_KEY}"
+```
+
+#### Check NGC Fallback Status
+
+```bash
+# Check NGC fallback status
+python -m arm64_cuda_fallback ngc
+
+# Setup NGC registry
+python -m arm64_cuda_fallback ngc --setup
+```
+
+#### Using NGC Containers
+
+```python
+from arm64_cuda_fallback import NGCFallback
+
+# Initialize NGC fallback
+ngc = NGCFallback(use_emulation=True, verbose=True)
+
+# Check status
+status = ngc.get_status()
+print(f"Docker available: {status['docker_available']}")
+print(f"NGC logged in: {status['ngc_logged_in']}")
+
+# Setup NGC registry
+ngc.setup_ngc_registry()
+
+# Get configuration for AlphaFold2
+af2_config = ngc.get_alphafold_config(
+    data_dir='/path/to/alphafold_data',
+    output_dir='/path/to/output'
+)
+
+# Run container (example)
+# result = ngc.run_container(af2_config, command='...')
+```
+
+#### NGC Container Options
+
+**On ARM64 Systems:**
+- Use Docker emulation (slower but functional)
+- OR use cloud AMD64 instances (faster, recommended for production)
+
+**On AMD64 Systems:**
+- Native execution with full GPU support
+
+**Available NGC Containers:**
+- AlphaFold2: `nvcr.io/nvidia/clara/alphafold2:latest`
+- PyTorch base: `nvcr.io/nvidia/pytorch:24.01-py3`
+- Custom containers can be built on these bases
+
+### Solution 3: Build PyTorch from Source
+
+For ARM64 systems that need native CUDA support, you can build PyTorch from source.
+
+⚠️ **Warning**: This is complex and time-consuming (1-3 hours). Only recommended for advanced users.
+
+#### Prerequisites Check
+
+```bash
+# Check build dependencies
+python -m arm64_cuda_fallback pytorch-build
+
+# Generate build script
+python -m arm64_cuda_fallback pytorch-build --generate-script
+```
+
+#### Manual Build Process
+
+```python
+from arm64_cuda_fallback import PyTorchSourceBuildFallback
+
+# Initialize build fallback
+builder = PyTorchSourceBuildFallback(verbose=True)
+
+# Check dependencies
+status = builder.get_status()
+print(f"Build dependencies ready: {status['dependencies_ready']}")
+print(f"CUDA available: {status['cuda_available']}")
+
+# Get installation guide
+print(builder.get_installation_guide())
+
+# Generate build script
+config = builder.get_recommended_build_config()
+script_path = builder.build_dir + '/pytorch_arm64_build.sh'
+builder.create_build_script(config, script_path)
+
+print(f"\nRun: {script_path}")
+```
+
+#### Build Steps
+
+1. **Install dependencies**:
+```bash
+sudo apt update
+sudo apt install build-essential cmake git python3-dev
+# Install CUDA Toolkit from NVIDIA
+# Install cuDNN from NVIDIA
+```
+
+2. **Generate and run build script**:
+```bash
+python -m arm64_cuda_fallback pytorch-build --generate-script
+~/pytorch_build/pytorch_arm64_build.sh
+```
+
+3. **Wait for build** (1-3 hours depending on system)
+
+4. **Verify installation**:
+```bash
+python3 -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
+```
+
+#### When to Use PyTorch Source Build
+
+✅ **Use when:**
+- You need native ARM64 CUDA performance
+- You have ARM64 hardware with NVIDIA GPUs
+- You have advanced Linux and build system knowledge
+- You can dedicate 1-3 hours for building
+- Pre-built wheels don't support your configuration
+
+❌ **Don't use when:**
+- You just want to test the workflow (use CPU fallback)
+- You're on a deadline (use cloud instances)
+- You lack build system experience (use NGC containers)
+
+### Solution 4: Cloud GPU Alternative
 
 For production workloads, consider cloud GPU instances:
 
@@ -347,6 +500,73 @@ This demonstrates:
 - Use **CPU Fallback** for development
 - Switch to **Cloud GPU** for production runs
 - Keep both options available
+
+## Comparison Matrix
+
+| Feature | CPU Fallback | NGC Containers | PyTorch Build | Cloud GPU |
+|---------|-------------|----------------|---------------|-----------|
+| **Setup Time** | Minutes | Minutes | Hours (1-3) | 10-30 min |
+| **Cost** | Free | Free (local) | Free | $0.50-5/hour |
+| **Performance** | Slow (CPU only) | Moderate-Fast | Fast (native) | Fast (native) |
+| **Complexity** | Low | Low-Medium | High | Medium |
+| **GPU Support** | No | Via emulation | Yes (if built) | Yes (native) |
+| **Best For** | Development, testing | Production (with emulation) | Advanced users | Production |
+| **Maintenance** | None | Low | High | Low |
+| **Deprecation** | Easy | Easy | Easy | N/A |
+
+## Recommendations
+
+### For Development & Testing
+- ✅ Use **CPU Fallback Mode**
+- Simple setup, no costs
+- Good for testing workflows
+- Acceptable for small proteins
+
+### For Production with ARM64 Hardware
+- ✅ Use **NGC Containers** (recommended)
+  - Official NVIDIA containers
+  - Easy deployment
+  - Works via emulation or cloud
+- Consider **PyTorch Source Build** (advanced)
+  - Only if you need native performance
+  - Requires expertise
+
+### For Production & Heavy Workloads
+- ✅ Use **Cloud GPU Instances**
+- Full GPU performance
+- Cost-effective for large jobs
+- No ARM64 limitations
+
+### For Mixed Workloads
+- Use **CPU Fallback** for development
+- Use **NGC Containers** for production on ARM64
+- Switch to **Cloud GPU** for heavy production runs
+- Keep all options available for flexibility
+
+## Command Reference
+
+```bash
+# Check all fallback options
+python -m arm64_cuda_fallback info
+
+# Solution 1: CPU Fallback
+python -m arm64_cuda_fallback detect
+python -m arm64_cuda_fallback pytorch
+python -m arm64_cuda_fallback jax
+python -m arm64_cuda_fallback configure-cpu --tips
+
+# Solution 2: NGC Containers
+python -m arm64_cuda_fallback ngc
+python -m arm64_cuda_fallback ngc --setup
+
+# Solution 3: PyTorch Source Build
+python -m arm64_cuda_fallback pytorch-build
+python -m arm64_cuda_fallback pytorch-build --generate-script
+
+# Check deprecation status
+python -m arm64_cuda_fallback check-upstream
+python -m arm64_cuda_fallback migration
+```
 
 ## Troubleshooting
 

@@ -95,6 +95,82 @@ class TestJAXFallback(unittest.TestCase):
         self.assertIsInstance(result, bool)
 
 
+class TestNGCFallback(unittest.TestCase):
+    """Test NGC fallback functionality."""
+    
+    def test_fallback_initialization(self):
+        """Test NGC fallback initializes correctly."""
+        from arm64_cuda_fallback.ngc_fallback import NGCFallback
+        fallback = NGCFallback(verbose=False)
+        self.assertIsNotNone(fallback)
+    
+    def test_check_docker_available(self):
+        """Test check_docker_available() returns bool."""
+        from arm64_cuda_fallback.ngc_fallback import NGCFallback
+        fallback = NGCFallback(verbose=False)
+        result = fallback.check_docker_available()
+        self.assertIsInstance(result, bool)
+    
+    def test_get_status_returns_dict(self):
+        """Test get_status() returns a dictionary."""
+        from arm64_cuda_fallback.ngc_fallback import NGCFallback
+        fallback = NGCFallback(verbose=False)
+        
+        status = fallback.get_status()
+        self.assertIsInstance(status, dict)
+        self.assertIn('architecture', status)
+        self.assertIn('docker_available', status)
+    
+    def test_get_recommendation(self):
+        """Test get_recommendation() returns string."""
+        from arm64_cuda_fallback.ngc_fallback import NGCFallback
+        fallback = NGCFallback(verbose=False)
+        recommendation = fallback.get_recommendation()
+        self.assertIsInstance(recommendation, str)
+        self.assertTrue(len(recommendation) > 0)
+
+
+class TestPyTorchSourceBuild(unittest.TestCase):
+    """Test PyTorch source build fallback functionality."""
+    
+    def test_fallback_initialization(self):
+        """Test PyTorch source build fallback initializes correctly."""
+        from arm64_cuda_fallback.pytorch_source_build import PyTorchSourceBuildFallback
+        fallback = PyTorchSourceBuildFallback(verbose=False)
+        self.assertIsNotNone(fallback)
+    
+    def test_check_build_dependencies(self):
+        """Test check_build_dependencies() returns dict."""
+        from arm64_cuda_fallback.pytorch_source_build import PyTorchSourceBuildFallback
+        fallback = PyTorchSourceBuildFallback(verbose=False)
+        
+        deps = fallback.check_build_dependencies()
+        self.assertIsInstance(deps, dict)
+        self.assertIn('git', deps)
+        self.assertIn('cmake', deps)
+        self.assertIn('gcc', deps)
+    
+    def test_get_status_returns_dict(self):
+        """Test get_status() returns a dictionary."""
+        from arm64_cuda_fallback.pytorch_source_build import PyTorchSourceBuildFallback
+        fallback = PyTorchSourceBuildFallback(verbose=False)
+        
+        status = fallback.get_status()
+        self.assertIsInstance(status, dict)
+        self.assertIn('architecture', status)
+        self.assertIn('dependencies', status)
+    
+    def test_get_recommended_build_config(self):
+        """Test get_recommended_build_config() returns BuildConfig."""
+        from arm64_cuda_fallback.pytorch_source_build import PyTorchSourceBuildFallback
+        fallback = PyTorchSourceBuildFallback(verbose=False)
+        
+        config = fallback.get_recommended_build_config()
+        self.assertIsNotNone(config)
+        self.assertIsNotNone(config.cuda_version)
+        self.assertIsNotNone(config.python_version)
+
+
 class TestUtils(unittest.TestCase):
     """Test utility functions."""
     
@@ -159,6 +235,8 @@ class TestIntegration(unittest.TestCase):
                 DeviceInfo,
                 PyTorchFallback,
                 JAXFallback,
+                NGCFallback,
+                PyTorchSourceBuildFallback,
                 get_optimal_device,
                 format_device_info,
             )

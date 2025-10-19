@@ -11,7 +11,7 @@ This module is temporary and will be removed when:
 2. JAX adds native ARM64 CUDA support
 3. All upstream dependencies support ARM64 CUDA
 
-Version: 1.0.0
+Version: 1.1.0
 Expected Deprecation: Q2 2026 (subject to upstream progress)
 """
 
@@ -21,14 +21,20 @@ from typing import Optional, Dict, Any
 from .detector import CUDADetector, DeviceInfo
 from .pytorch_fallback import PyTorchFallback
 from .jax_fallback import JAXFallback
+from .ngc_fallback import NGCFallback, setup_ngc_fallback
+from .pytorch_source_build import PyTorchSourceBuildFallback, setup_pytorch_source_build
 from .utils import get_optimal_device, format_device_info
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __all__ = [
     "CUDADetector",
     "DeviceInfo",
     "PyTorchFallback",
     "JAXFallback",
+    "NGCFallback",
+    "setup_ngc_fallback",
+    "PyTorchSourceBuildFallback",
+    "setup_pytorch_source_build",
     "get_optimal_device",
     "format_device_info",
 ]

@@ -13,6 +13,8 @@ from . import get_fallback_config, print_deprecation_notice
 from .detector import CUDADetector
 from .pytorch_fallback import PyTorchFallback, check_pytorch_cuda
 from .jax_fallback import JAXFallback, check_jax_gpu
+from .ngc_fallback import NGCFallback, setup_ngc_fallback
+from .pytorch_source_build import PyTorchSourceBuildFallback, setup_pytorch_source_build
 from .utils import (
     check_upstream_support,
     should_deprecate,
@@ -101,6 +103,46 @@ def cmd_check_upstream(args):
             print(get_migration_guide())
 
 
+def cmd_ngc(args):
+    """Check NGC container fallback status."""
+    fallback = setup_ngc_fallback(use_emulation=args.use_emulation, verbose=True)
+    
+    print("\nNGC Container Fallback Status:")
+    status = fallback.get_status()
+    print(format_device_info(status))
+    
+    if args.setup:
+        print("\nSetting up NGC registry...")
+        success = fallback.setup_ngc_registry()
+        if success:
+            print("✓ NGC registry setup complete")
+        else:
+            print("✗ NGC registry setup failed")
+            print("Please set NGC_CLI_API_KEY environment variable")
+    
+    return 0
+
+
+def cmd_pytorch_build(args):
+    """Check PyTorch source build fallback status."""
+    fallback = setup_pytorch_source_build(verbose=True)
+    
+    print("\nPyTorch Source Build Fallback Status:")
+    status = fallback.get_status()
+    print(format_device_info(status))
+    
+    if args.generate_script:
+        print("\nGenerating build script...")
+        config = fallback.get_recommended_build_config()
+        script_path = fallback.build_dir + '/pytorch_arm64_build.sh'
+        fallback.create_build_script(config, script_path)
+        print(f"✓ Build script created: {script_path}")
+        print(f"\nTo build PyTorch, run:")
+        print(f"  {script_path}")
+    
+    return 0
+
+
 def cmd_configure_cpu(args):
     """Configure environment for optimal CPU performance."""
     configure_environment_for_cpu()
@@ -159,6 +201,15 @@ def cmd_info(args):
     except Exception as e:
         print(f"✗ JAX check failed: {e}")
     
+    print("=" * 60)
+    print()
+    
+    # Check fallback options
+    print("Fallback Options:")
+    print("=" * 60)
+    print("1. CPU Fallback - Automatic (always available)")
+    print("2. NGC Containers - Docker-based (requires NGC API key)")
+    print("3. PyTorch Source Build - Manual (requires build tools)")
     print("=" * 60)
     print()
     
@@ -287,6 +338,36 @@ Examples:
         help='Show comprehensive information'
     )
     info_parser.set_defaults(func=cmd_info)
+    
+    # ngc command (NEW)
+    ngc_parser = subparsers.add_parser(
+        'ngc',
+        help='Check NGC containers fallback status'
+    )
+    ngc_parser.add_argument(
+        '--use-emulation',
+        action='store_true',
+        default=True,
+        help='Use Docker emulation on ARM64 (default)'
+    )
+    ngc_parser.add_argument(
+        '--setup',
+        action='store_true',
+        help='Setup NGC registry authentication'
+    )
+    ngc_parser.set_defaults(func=cmd_ngc)
+    
+    # pytorch-build command (NEW)
+    build_parser = subparsers.add_parser(
+        'pytorch-build',
+        help='Check PyTorch source build fallback status'
+    )
+    build_parser.add_argument(
+        '--generate-script',
+        action='store_true',
+        help='Generate build script'
+    )
+    build_parser.set_defaults(func=cmd_pytorch_build)
     
     args = parser.parse_args()
     
