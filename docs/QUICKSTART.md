@@ -155,7 +155,7 @@ Run the included test script to verify everything is working:
 ## Next Steps
 
 - Read the [full documentation](DOCKER_MCP_README.md)
-- Explore the [example notebook](src/protein-binder-design.ipynb)
+- Explore the [example notebook](../src/protein-binder-design.ipynb)
 - Check out the [MCP Server API docs](http://localhost:8000/docs)
 
 ## Architecture
