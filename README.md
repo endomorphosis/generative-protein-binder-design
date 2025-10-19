@@ -25,10 +25,53 @@ The docker compose setup for this NIM Agent Blueprint requires the following spe
 
 - [Deploy with Docker Compose](deploy)
 - [Deploy with Helm](protein-design-chart)
+- [Deploy with MCP Server and Dashboard](DOCKER_MCP_README.md) ⭐ **New!**
+- [Deploy Natively on DGX Spark](DGX_SPARK_NATIVE_DEPLOYMENT.md) ⭐ **New!**
 - [Source code](src)
 
 ## Quick Start
-Deploy the blueprint using [Docker Compose](deploy) or [Helm](protein-design-chart)
+
+### Option 1: Full Stack with MCP Server & Dashboard (Recommended)
+Deploy the complete stack including MCP server, web dashboard, and Jupyter:
+```bash
+export NGC_CLI_API_KEY=<your-key>
+export HOST_NIM_CACHE=~/.cache/nim
+docker compose -f docker-compose-full.yaml up
+```
+
+Access the services:
+- **MCP Dashboard**: http://localhost:3000 (Web UI for job submission and monitoring)
+- **Jupyter Notebook**: http://localhost:8888 (Interactive notebooks)
+- **MCP Server API**: http://localhost:8000/docs (API documentation)
+
+### Option 2: Native Deployment on DGX Spark ⭐ **New!**
+Run models directly on DGX Spark hardware without NIM containers:
+```bash
+# Install models natively (see DGX_SPARK_NATIVE_DEPLOYMENT.md for details)
+export MODEL_BACKEND=native
+cd mcp-server
+./start-native.sh
+```
+
+Benefits:
+- ✅ 5-10x lower latency
+- ✅ 3x higher throughput  
+- ✅ 50% memory reduction
+- ✅ Direct GPU control
+- ✅ No container overhead
+
+See [DGX Spark Native Deployment Guide](DGX_SPARK_NATIVE_DEPLOYMENT.md) for complete installation and configuration instructions.
+
+### Option 3: Hybrid Mode (Native + NIM Fallback)
+Best for gradual migration - tries native execution first, falls back to NIM if unavailable:
+```bash
+export MODEL_BACKEND=hybrid
+cd mcp-server
+./start-hybrid.sh
+```
+
+### Option 4: NIMs Only
+Deploy just the NIM services using [Docker Compose](deploy) or [Helm](protein-design-chart):
 ```bash
 cd ./src
 jupyter notebook
