@@ -81,29 +81,15 @@ jobs:
       run: |
         echo "=== Testing AlphaFold2 ARM64 Installation ==="
         
-        # Source conda
+        # Use the real installation script
+        bash scripts/install_alphafold2_arm64.sh || echo "Installation script completed with warnings"
+        
+        # Verify installation
         source $HOME/miniforge3/bin/activate
+        conda activate alphafold2_arm64
         
-        # Create AlphaFold2 environment
-        mamba create -n alphafold2_test python=3.8 -y
-        conda activate alphafold2_test
-        
-        # Install JAX for ARM64
-        pip install --upgrade pip
-        pip install jax[cpu]  # Start with CPU version for ARM64
-        
-        # Clone AlphaFold2
-        if [ ! -d "alphafold" ]; then
-          git clone https://github.com/deepmind/alphafold.git
-        fi
-        
-        cd alphafold
-        
-        # Install requirements
-        pip install -r requirements.txt || echo "Some requirements may have failed"
-        
-        # Test basic import
-        python -c "import jax; print(f'JAX version: {jax.__version__}')" || echo "JAX import failed"
+        # Run comprehensive tests
+        python $HOME/alphafold2_arm64/test_alphafold.py
         
         echo "AlphaFold2 test completed"
         
@@ -112,27 +98,15 @@ jobs:
       run: |
         echo "=== Testing RFDiffusion ARM64 Installation ==="
         
+        # Use the real installation script
+        bash scripts/install_rfdiffusion_arm64.sh || echo "Installation script completed with warnings"
+        
+        # Verify installation
         source $HOME/miniforge3/bin/activate
+        conda activate rfdiffusion_arm64
         
-        # Create RFDiffusion environment
-        mamba create -n rfdiffusion_test python=3.9 -y
-        conda activate rfdiffusion_test
-        
-        # Install PyTorch for ARM64
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-        
-        # Clone RFDiffusion
-        if [ ! -d "RFdiffusion" ]; then
-          git clone https://github.com/RosettaCommons/RFdiffusion.git
-        fi
-        
-        cd RFdiffusion
-        
-        # Install requirements
-        pip install -e . || echo "Installation may have issues"
-        
-        # Test basic import
-        python -c "import torch; print(f'PyTorch version: {torch.__version__}')" || echo "PyTorch import failed"
+        # Run comprehensive tests
+        python $HOME/rfdiffusion_arm64/test_rfdiffusion.py
         
         echo "RFDiffusion test completed"
         
@@ -141,24 +115,15 @@ jobs:
       run: |
         echo "=== Testing ProteinMPNN ARM64 Installation ==="
         
+        # Use the real installation script
+        bash scripts/install_proteinmpnn_arm64.sh || echo "Installation script completed with warnings"
+        
+        # Verify installation
         source $HOME/miniforge3/bin/activate
+        conda activate proteinmpnn_arm64
         
-        # Create ProteinMPNN environment
-        mamba create -n proteinmpnn_test python=3.8 -y
-        conda activate proteinmpnn_test
-        
-        # Install dependencies
-        pip install torch numpy biopython
-        
-        # Clone ProteinMPNN
-        if [ ! -d "ProteinMPNN" ]; then
-          git clone https://github.com/daudalabura/ProteinMPNN.git
-        fi
-        
-        cd ProteinMPNN
-        
-        # Test basic functionality
-        python -c "import torch; import numpy; print('Basic dependencies work')" || echo "Import test failed"
+        # Run comprehensive tests
+        python $HOME/proteinmpnn_arm64/test_proteinmpnn.py
         
         echo "ProteinMPNN test completed"
         

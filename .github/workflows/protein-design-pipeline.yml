@@ -61,17 +61,27 @@ jobs:
       if: ${{ github.event.inputs.use_native == 'true' }}
       run: |
         echo "=== Setting up native ARM64 environment ==="
-        source .venv/bin/activate
         
-        # Install conda if not available
-        if [ ! -d "$HOME/miniforge3" ]; then
-          echo "Installing Miniforge..."
-          wget -O miniforge.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh"
-          bash miniforge.sh -b -p $HOME/miniforge3
+        # Install all tools if not already installed
+        if [ ! -d "$HOME/alphafold2_arm64" ] || [ ! -d "$HOME/rfdiffusion_arm64" ] || [ ! -d "$HOME/proteinmpnn_arm64" ]; then
+          echo "Installing native ARM64 tools..."
+          
+          # Install Miniforge if needed
+          if [ ! -d "$HOME/miniforge3" ]; then
+            wget -O miniforge.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh"
+            bash miniforge.sh -b -p $HOME/miniforge3
+            rm miniforge.sh
+          fi
+          
           source $HOME/miniforge3/bin/activate
           conda init bash
-          conda install -y mamba
+          
+          # Install all components using installation scripts
+          bash scripts/install_alphafold2_arm64.sh || echo "AlphaFold2 setup completed"
+          bash scripts/install_rfdiffusion_arm64.sh || echo "RFDiffusion setup completed"
+          bash scripts/install_proteinmpnn_arm64.sh || echo "ProteinMPNN setup completed"
         else
+          echo "Native tools already installed"
           source $HOME/miniforge3/bin/activate
         fi
         

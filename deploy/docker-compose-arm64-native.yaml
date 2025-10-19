@@ -1,0 +1,96 @@
+name: protein-binder-design-arm64-native
+
+# ARM64 Native Docker Compose Configuration
+# This uses ARM64-native Docker images built from source
+# No emulation required - all containers run natively on ARM64 hardware
+
+services:
+  ## AlphaFold2 ARM64 Native
+  alphafold-arm64:
+    build:
+      context: .
+      dockerfile: Dockerfile.alphafold2-arm64
+      platforms:
+        - linux/arm64
+    image: protein-binder/alphafold2:arm64-latest
+    runtime: nvidia
+    ports:
+      - "8081:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/models
+      - ./outputs/alphafold:/outputs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: "nvidia"
+              capabilities: [gpu]
+              device_ids: ['0']
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - ALPHAFOLD_DATA_DIR=/models
+    platform: linux/arm64  # Native ARM64
+    restart: unless-stopped
+
+  ## RFDiffusion ARM64 Native
+  rfdiffusion-arm64:
+    build:
+      context: .
+      dockerfile: Dockerfile.rfdiffusion-arm64
+      platforms:
+        - linux/arm64
+    image: protein-binder/rfdiffusion:arm64-latest
+    runtime: nvidia
+    ports:
+      - "8082:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/models
+      - ./outputs/rfdiffusion:/outputs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: "nvidia"
+              capabilities: [gpu]
+              device_ids: ['0']
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - RFDIFFUSION_MODEL_DIR=/models
+    platform: linux/arm64  # Native ARM64
+    restart: unless-stopped
+
+  ## ProteinMPNN ARM64 Native
+  proteinmpnn-arm64:
+    build:
+      context: .
+      dockerfile: Dockerfile.proteinmpnn-arm64
+      platforms:
+        - linux/arm64
+    image: protein-binder/proteinmpnn:arm64-latest
+    runtime: nvidia
+    ports:
+      - "8083:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/models
+      - ./outputs/proteinmpnn:/outputs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: "nvidia"
+              capabilities: [gpu]
+              device_ids: ['0']
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - PROTEINMPNN_MODEL_DIR=/models
+    platform: linux/arm64  # Native ARM64
+    restart: unless-stopped
+
+# Shared volumes
+volumes:
+  alphafold_models:
+    driver: local
+  rfdiffusion_models:
+    driver: local
+  proteinmpnn_models:
+    driver: local
