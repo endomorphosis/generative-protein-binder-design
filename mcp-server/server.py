@@ -2,6 +2,11 @@
 """
 MCP Server for Protein Binder Design
 Implements Model Context Protocol endpoints for managing protein design workflows
+
+Supports multiple backends:
+- NIM Backend: NVIDIA NIM containers (default)
+- Native Backend: Direct model execution on DGX Spark
+- Hybrid Backend: Native with NIM fallback
 """
 
 import os
@@ -15,13 +20,20 @@ from pydantic import BaseModel, Field
 import httpx
 import logging
 
+# Import model backend abstraction
+from model_backends import get_backend
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize model backend based on environment variable
+# MODEL_BACKEND can be: "nim" (default), "native", or "hybrid"
+model_backend = get_backend()
+
 app = FastAPI(
     title="Protein Binder Design MCP Server",
-    description="Model Context Protocol server for managing protein design workflows",
+    description=f"Model Context Protocol server for managing protein design workflows\nBackend: {os.getenv('MODEL_BACKEND', 'nim')}",
     version="1.0.0"
 )
 
@@ -33,14 +45,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Configuration for NIM services
-NIM_SERVICES = {
-    "alphafold": os.getenv("ALPHAFOLD_URL", "http://localhost:8081"),
-    "rfdiffusion": os.getenv("RFDIFFUSION_URL", "http://localhost:8082"),
-    "proteinmpnn": os.getenv("PROTEINMPNN_URL", "http://localhost:8083"),
-    "alphafold_multimer": os.getenv("ALPHAFOLD_MULTIMER_URL", "http://localhost:8084"),
-}
 
 # In-memory job storage (in production, use a database)
 jobs_db: Dict[str, Dict[str, Any]] = {}
@@ -224,27 +228,12 @@ async def health_check() -> Dict[str, str]:
 
 @app.get("/api/services/status")
 async def check_services() -> Dict[str, Any]:
-    """Check status of all NIM services"""
-    status = {}
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        for service_name, url in NIM_SERVICES.items():
-            try:
-                response = await client.get(f"{url}/v1/health/ready")
-                status[service_name] = {
-                    "status": "ready" if response.status_code == 200 else "not_ready",
-                    "url": url
-                }
-            except Exception as e:
-                status[service_name] = {
-                    "status": "error",
-                    "error": str(e),
-                    "url": url
-                }
-    return status
+    """Check status of all backend services"""
+    return await model_backend.check_health()
 
 # Background job processing
 async def process_job(job_id: str):
-    """Process a protein binder design job"""
+    """Process a protein binder design job using configured backend"""
     try:
         job = jobs_db[job_id]
         job["status"] = "running"
@@ -253,103 +242,89 @@ async def process_job(job_id: str):
         sequence = job["input"]["sequence"]
         num_designs = job["input"]["num_designs"]
         
-        async with httpx.AsyncClient(timeout=600.0) as client:
-            # Step 1: AlphaFold2 - predict structure of target
-            logger.info(f"Job {job_id}: Running AlphaFold2")
-            job["progress"]["alphafold"] = "running"
-            
-            try:
-                af_response = await client.post(
-                    f"{NIM_SERVICES['alphafold']}/v1/structure",
-                    json={"sequence": sequence}
-                )
-                af_response.raise_for_status()
-                alphafold_result = af_response.json()
-                job["progress"]["alphafold"] = "completed"
-            except Exception as e:
-                logger.error(f"AlphaFold2 error: {e}")
-                job["progress"]["alphafold"] = f"error: {str(e)}"
-                # For demo purposes, continue with mock data
-                alphafold_result = {"pdb": "mock_structure"}
-            
-            # Step 2: RFDiffusion - generate binder backbones
-            logger.info(f"Job {job_id}: Running RFDiffusion")
-            job["progress"]["rfdiffusion"] = "running"
-            
-            try:
-                rf_response = await client.post(
-                    f"{NIM_SERVICES['rfdiffusion']}/v1/design",
-                    json={
-                        "target_pdb": alphafold_result.get("pdb"),
-                        "num_designs": num_designs
-                    }
-                )
-                rf_response.raise_for_status()
-                rfdiffusion_result = rf_response.json()
-                job["progress"]["rfdiffusion"] = "completed"
-            except Exception as e:
-                logger.error(f"RFDiffusion error: {e}")
-                job["progress"]["rfdiffusion"] = f"error: {str(e)}"
-                rfdiffusion_result = {"designs": [{"pdb": f"mock_design_{i}"} for i in range(num_designs)]}
-            
-            # Step 3: ProteinMPNN - generate sequences for backbones
-            logger.info(f"Job {job_id}: Running ProteinMPNN")
-            job["progress"]["proteinmpnn"] = "running"
-            
-            try:
-                mpnn_results = []
-                for design in rfdiffusion_result.get("designs", [])[:num_designs]:
-                    mpnn_response = await client.post(
-                        f"{NIM_SERVICES['proteinmpnn']}/v1/sequence",
-                        json={"backbone_pdb": design.get("pdb")}
-                    )
-                    mpnn_response.raise_for_status()
-                    mpnn_results.append(mpnn_response.json())
-                job["progress"]["proteinmpnn"] = "completed"
-            except Exception as e:
-                logger.error(f"ProteinMPNN error: {e}")
-                job["progress"]["proteinmpnn"] = f"error: {str(e)}"
-                mpnn_results = [{"sequence": f"MOCK_SEQ_{i}"} for i in range(num_designs)]
-            
-            # Step 4: AlphaFold2-Multimer - predict complex structures
-            logger.info(f"Job {job_id}: Running AlphaFold2-Multimer")
-            job["progress"]["alphafold_multimer"] = "running"
-            
-            try:
-                multimer_results = []
-                for i, mpnn_result in enumerate(mpnn_results[:num_designs]):
-                    multimer_response = await client.post(
-                        f"{NIM_SERVICES['alphafold_multimer']}/v1/structure",
-                        json={
-                            "sequences": [sequence, mpnn_result.get("sequence")]
-                        }
-                    )
-                    multimer_response.raise_for_status()
-                    multimer_results.append(multimer_response.json())
-                job["progress"]["alphafold_multimer"] = "completed"
-            except Exception as e:
-                logger.error(f"AlphaFold2-Multimer error: {e}")
-                job["progress"]["alphafold_multimer"] = f"error: {str(e)}"
-                multimer_results = [{"pdb": f"mock_complex_{i}"} for i in range(num_designs)]
-            
-            # Compile results
-            job["results"] = {
-                "target_structure": alphafold_result,
-                "designs": [
-                    {
-                        "design_id": i,
-                        "backbone": rfdiffusion_result.get("designs", [])[i] if i < len(rfdiffusion_result.get("designs", [])) else {},
-                        "sequence": mpnn_results[i] if i < len(mpnn_results) else {},
-                        "complex_structure": multimer_results[i] if i < len(multimer_results) else {}
-                    }
-                    for i in range(num_designs)
-                ]
-            }
-            
-            job["status"] = "completed"
-            job["updated_at"] = datetime.now().isoformat()
-            logger.info(f"Job {job_id}: Completed successfully")
-            
+        # Step 1: AlphaFold2 - predict structure of target
+        logger.info(f"Job {job_id}: Running AlphaFold2")
+        job["progress"]["alphafold"] = "running"
+        
+        try:
+            alphafold_result = await model_backend.predict_structure(sequence)
+            job["progress"]["alphafold"] = "completed"
+            logger.info(f"Job {job_id}: AlphaFold2 completed")
+        except Exception as e:
+            logger.error(f"AlphaFold2 error: {e}")
+            job["progress"]["alphafold"] = f"error: {str(e)}"
+            # For demo purposes, continue with mock data
+            alphafold_result = {"pdb": "mock_structure"}
+        
+        # Step 2: RFDiffusion - generate binder backbones
+        logger.info(f"Job {job_id}: Running RFDiffusion")
+        job["progress"]["rfdiffusion"] = "running"
+        
+        try:
+            rfdiffusion_result = await model_backend.design_binder_backbone(
+                alphafold_result.get("pdb", ""),
+                num_designs
+            )
+            job["progress"]["rfdiffusion"] = "completed"
+            logger.info(f"Job {job_id}: RFDiffusion completed")
+        except Exception as e:
+            logger.error(f"RFDiffusion error: {e}")
+            job["progress"]["rfdiffusion"] = f"error: {str(e)}"
+            rfdiffusion_result = {"designs": [{"pdb": f"mock_design_{i}"} for i in range(num_designs)]}
+        
+        # Step 3: ProteinMPNN - generate sequences for backbones
+        logger.info(f"Job {job_id}: Running ProteinMPNN")
+        job["progress"]["proteinmpnn"] = "running"
+        
+        try:
+            mpnn_results = []
+            for design in rfdiffusion_result.get("designs", [])[:num_designs]:
+                mpnn_result = await model_backend.generate_sequence(design.get("pdb", ""))
+                mpnn_results.append(mpnn_result)
+            job["progress"]["proteinmpnn"] = "completed"
+            logger.info(f"Job {job_id}: ProteinMPNN completed")
+        except Exception as e:
+            logger.error(f"ProteinMPNN error: {e}")
+            job["progress"]["proteinmpnn"] = f"error: {str(e)}"
+            mpnn_results = [{"sequence": f"MOCK_SEQ_{i}"} for i in range(num_designs)]
+        
+        # Step 4: AlphaFold2-Multimer - predict complex structures
+        logger.info(f"Job {job_id}: Running AlphaFold2-Multimer")
+        job["progress"]["alphafold_multimer"] = "running"
+        
+        try:
+            multimer_results = []
+            for i, mpnn_result in enumerate(mpnn_results[:num_designs]):
+                multimer_result = await model_backend.predict_complex([
+                    sequence,
+                    mpnn_result.get("sequence", "")
+                ])
+                multimer_results.append(multimer_result)
+            job["progress"]["alphafold_multimer"] = "completed"
+            logger.info(f"Job {job_id}: AlphaFold2-Multimer completed")
+        except Exception as e:
+            logger.error(f"AlphaFold2-Multimer error: {e}")
+            job["progress"]["alphafold_multimer"] = f"error: {str(e)}"
+            multimer_results = [{"pdb": f"mock_complex_{i}"} for i in range(num_designs)]
+        
+        # Compile results
+        job["results"] = {
+            "target_structure": alphafold_result,
+            "designs": [
+                {
+                    "design_id": i,
+                    "backbone": rfdiffusion_result.get("designs", [])[i] if i < len(rfdiffusion_result.get("designs", [])) else {},
+                    "sequence": mpnn_results[i] if i < len(mpnn_results) else {},
+                    "complex_structure": multimer_results[i] if i < len(multimer_results) else {}
+                }
+                for i in range(num_designs)
+            ]
+        }
+        
+        job["status"] = "completed"
+        job["updated_at"] = datetime.now().isoformat()
+        logger.info(f"Job {job_id}: Completed successfully")
+        
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}")
         job["status"] = "failed"
