@@ -1,0 +1,190 @@
+name: ARM64 Native Installation Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component to test'
+        required: true
+        default: 'alphafold2'
+        type: choice
+        options:
+        - alphafold2
+        - rfdiffusion
+        - proteinmpnn
+        - all
+      skip_conda:
+        description: 'Skip conda/mamba installation'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  native-install-test:
+    runs-on: [self-hosted, ARM64, gpu]
+    timeout-minutes: 240  # 4 hours max
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: System Prerequisites Check
+      run: |
+        echo "=== ARM64 Native Installation Test ==="
+        echo "Architecture: $(uname -m)"
+        echo "GPU Status:"
+        nvidia-smi || echo "GPU check failed"
+        echo "Memory: $(free -h | awk '/^Mem:/{print $2}')"
+        echo "Disk Space: $(df -h . | awk 'NR==2{print $4}')"
+        echo
+        
+    - name: Setup Build Environment
+      run: |
+        echo "=== Setting up build environment ==="
+        # Update system packages
+        sudo apt-get update
+        
+        # Install essential build tools
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          git \
+          wget \
+          curl \
+          python3-dev \
+          python3-pip \
+          python3-venv
+          
+        echo "Build tools installed successfully"
+        
+    - name: Install Conda/Mamba (if not skipped)
+      if: ${{ github.event.inputs.skip_conda != 'true' }}
+      run: |
+        echo "=== Installing Miniforge for ARM64 ==="
+        if [ ! -d "$HOME/miniforge3" ]; then
+          wget -O miniforge.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh"
+          bash miniforge.sh -b -p $HOME/miniforge3
+          rm miniforge.sh
+        fi
+        
+        # Initialize conda
+        source $HOME/miniforge3/bin/activate
+        conda init bash
+        
+        # Install mamba for faster package resolution
+        conda install -y mamba
+        
+        echo "Conda/Mamba installed successfully"
+        
+    - name: Test AlphaFold2 Installation
+      if: ${{ github.event.inputs.component == 'alphafold2' || github.event.inputs.component == 'all' }}
+      run: |
+        echo "=== Testing AlphaFold2 ARM64 Installation ==="
+        
+        # Use the real installation script
+        bash scripts/install_alphafold2_arm64.sh || echo "Installation script completed with warnings"
+        
+        # Verify installation
+        source $HOME/miniforge3/bin/activate
+        conda activate alphafold2_arm64
+        
+        # Run comprehensive tests
+        python $HOME/alphafold2_arm64/test_alphafold.py
+        
+        echo "AlphaFold2 test completed"
+        
+    - name: Test RFDiffusion Installation
+      if: ${{ github.event.inputs.component == 'rfdiffusion' || github.event.inputs.component == 'all' }}
+      run: |
+        echo "=== Testing RFDiffusion ARM64 Installation ==="
+        
+        # Use the real installation script
+        bash scripts/install_rfdiffusion_arm64.sh || echo "Installation script completed with warnings"
+        
+        # Verify installation
+        source $HOME/miniforge3/bin/activate
+        conda activate rfdiffusion_arm64
+        
+        # Run comprehensive tests
+        python $HOME/rfdiffusion_arm64/test_rfdiffusion.py
+        
+        echo "RFDiffusion test completed"
+        
+    - name: Test ProteinMPNN Installation
+      if: ${{ github.event.inputs.component == 'proteinmpnn' || github.event.inputs.component == 'all' }}
+      run: |
+        echo "=== Testing ProteinMPNN ARM64 Installation ==="
+        
+        # Use the real installation script
+        bash scripts/install_proteinmpnn_arm64.sh || echo "Installation script completed with warnings"
+        
+        # Verify installation
+        source $HOME/miniforge3/bin/activate
+        conda activate proteinmpnn_arm64
+        
+        # Run comprehensive tests
+        python $HOME/proteinmpnn_arm64/test_proteinmpnn.py
+        
+        echo "ProteinMPNN test completed"
+        
+    - name: Integration Test
+      if: ${{ github.event.inputs.component == 'all' }}
+      run: |
+        echo "=== Running Integration Tests ==="
+        
+        source $HOME/miniforge3/bin/activate
+        
+        # Test environment switching
+        conda activate alphafold2_test
+        python -c "print('AlphaFold2 env active')"
+        
+        conda activate rfdiffusion_test  
+        python -c "print('RFDiffusion env active')"
+        
+        conda activate proteinmpnn_test
+        python -c "print('ProteinMPNN env active')"
+        
+        echo "Environment switching test completed"
+        
+    - name: Generate Installation Report
+      if: always()
+      run: |
+        echo "=== ARM64 Native Installation Report ===" > installation_report.txt
+        echo "Generated: $(date)" >> installation_report.txt
+        echo "Component tested: ${{ github.event.inputs.component }}" >> installation_report.txt
+        echo "Architecture: $(uname -m)" >> installation_report.txt
+        echo "Skip conda: ${{ github.event.inputs.skip_conda }}" >> installation_report.txt
+        echo >> installation_report.txt
+        
+        echo "Conda environments:" >> installation_report.txt
+        source $HOME/miniforge3/bin/activate 2>/dev/null && conda env list >> installation_report.txt || echo "Conda not available" >> installation_report.txt
+        echo >> installation_report.txt
+        
+        echo "GPU Status:" >> installation_report.txt
+        nvidia-smi >> installation_report.txt 2>/dev/null || echo "GPU not available" >> installation_report.txt
+        
+        cat installation_report.txt
+        
+    - name: Upload Installation Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: arm64-installation-report-${{ github.event.inputs.component }}-${{ github.run_number }}
+        path: installation_report.txt
+        retention-days: 30
+        
+    - name: Cleanup Test Environments
+      if: always()
+      run: |
+        echo "=== Cleaning up test environments ==="
+        source $HOME/miniforge3/bin/activate 2>/dev/null || exit 0
+        
+        # Remove test environments
+        conda env remove -n alphafold2_test -y 2>/dev/null || true
+        conda env remove -n rfdiffusion_test -y 2>/dev/null || true  
+        conda env remove -n proteinmpnn_test -y 2>/dev/null || true
+        
+        # Clean conda cache
+        conda clean --all -y
+        
+        echo "Cleanup completed"

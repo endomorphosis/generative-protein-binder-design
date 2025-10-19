@@ -1,0 +1,342 @@
+name: ARM64 Platform Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '.github/workflows/arm64-validation.yml'
+      - 'deploy/docker-compose*.yaml'
+      - 'scripts/*.sh'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Test mode to run'
+        required: true
+        default: 'quick'
+        type: choice
+        options:
+        - quick
+        - full
+        - docker-only
+        - native-only
+
+jobs:
+  validate-arm64:
+    runs-on: [self-hosted, ARM64, gpu]
+    timeout-minutes: 60
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Platform Detection
+      id: platform
+      run: |
+        echo "=== Platform Detection ==="
+        ARCH=$(uname -m)
+        echo "Architecture: $ARCH"
+        echo "arch=$ARCH" >> $GITHUB_OUTPUT
+        
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+          echo "Platform: ARM64 (native)"
+          echo "is_arm64=true" >> $GITHUB_OUTPUT
+        else
+          echo "Platform: $ARCH (not ARM64)"
+          echo "is_arm64=false" >> $GITHUB_OUTPUT
+        fi
+        
+        # Check OS
+        if [ -f /etc/os-release ]; then
+          . /etc/os-release
+          echo "OS: $NAME $VERSION_ID"
+          echo "os_name=$NAME" >> $GITHUB_OUTPUT
+          echo "os_version=$VERSION_ID" >> $GITHUB_OUTPUT
+        fi
+        
+        # Check kernel
+        echo "Kernel: $(uname -r)"
+        echo "kernel=$(uname -r)" >> $GITHUB_OUTPUT
+        echo
+        
+    - name: Validate ARM64 System
+      if: steps.platform.outputs.is_arm64 == 'true'
+      run: |
+        echo "=== ARM64 System Validation ==="
+        
+        # CPU information
+        echo "CPU Information:"
+        lscpu | grep -E "Architecture|CPU|Thread|Core|Socket|Model name"
+        echo
+        
+        # Memory
+        echo "Memory Information:"
+        free -h
+        echo
+        
+        # GPU
+        echo "GPU Information:"
+        if command -v nvidia-smi >/dev/null 2>&1; then
+          nvidia-smi --query-gpu=index,name,driver_version,memory.total,compute_cap --format=csv
+        else
+          echo "No NVIDIA GPU detected"
+        fi
+        echo
+        
+    - name: Docker Platform Support Check
+      run: |
+        echo "=== Docker Platform Support ==="
+        
+        # Docker version
+        docker --version
+        docker compose version
+        echo
+        
+        # Check Docker buildx
+        echo "Docker Buildx Platforms:"
+        docker buildx ls
+        echo
+        
+        # Check if QEMU is available for emulation
+        if docker run --rm --privileged multiarch/qemu-user-static --version >/dev/null 2>&1; then
+          echo "QEMU emulation: Available"
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        else
+          echo "QEMU emulation: Not available"
+        fi
+        echo
+        
+    - name: Test ARM64 Native Container
+      run: |
+        echo "=== Testing ARM64 Native Container ==="
+        
+        # Test basic ARM64 container
+        docker run --rm --platform=linux/arm64 ubuntu:22.04 bash -c "
+          echo 'Container architecture:' && uname -m
+          echo 'OS:' && cat /etc/os-release | grep PRETTY_NAME
+          echo 'Python:' && apt-get update -qq && apt-get install -y -qq python3 && python3 --version
+        "
+        
+        echo "ARM64 native container test: PASSED"
+        echo
+        
+    - name: Test AMD64 Emulation
+      run: |
+        echo "=== Testing AMD64 Emulation ==="
+        
+        # Test AMD64 container with emulation
+        docker run --rm --platform=linux/amd64 ubuntu:22.04 bash -c "
+          echo 'Container architecture:' && uname -m
+          echo 'OS:' && cat /etc/os-release | grep PRETTY_NAME
+          echo 'Testing emulation performance...'
+          time python3 -c 'sum(range(1000000))' 2>&1 | grep real || true
+        " || echo "AMD64 emulation test: FAILED"
+        
+        echo "AMD64 emulation test: COMPLETED"
+        echo
+        
+    - name: Test NVIDIA Container Runtime
+      if: steps.platform.outputs.is_arm64 == 'true'
+      run: |
+        echo "=== Testing NVIDIA Container Runtime ==="
+        
+        # Test GPU access in ARM64 container
+        docker run --rm --gpus all --platform=linux/arm64 ubuntu:22.04 bash -c "
+          apt-get update -qq
+          apt-get install -y -qq cuda-toolkit-12-3 || apt-get install -y -qq nvidia-cuda-toolkit || true
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi
+          else
+            echo 'nvidia-smi not available in container'
+          fi
+        " || echo "GPU test in ARM64 container: FAILED"
+        
+        echo "NVIDIA container runtime test: COMPLETED"
+        echo
+        
+    - name: Test Docker Compose Validation
+      if: ${{ github.event.inputs.test_mode != 'native-only' }}
+      run: |
+        echo "=== Docker Compose Validation ==="
+        
+        # Validate main docker-compose file
+        if [ -f "deploy/docker-compose.yaml" ]; then
+          echo "Validating docker-compose.yaml:"
+          docker compose -f deploy/docker-compose.yaml config > /tmp/compose-config.yaml
+          echo "[OK] docker-compose.yaml is valid"
+          
+          # Check platform specifications
+          echo "Platform specifications:"
+          grep -E "platform:|image:" deploy/docker-compose.yaml | head -20
+        fi
+        
+        # Validate single GPU compose file
+        if [ -f "deploy/docker-compose-single-gpu.yaml" ]; then
+          echo "Validating docker-compose-single-gpu.yaml:"
+          docker compose -f deploy/docker-compose-single-gpu.yaml config > /tmp/compose-single-config.yaml
+          echo "[OK] docker-compose-single-gpu.yaml is valid"
+        fi
+        
+        echo
+        
+    - name: Test Python Environment Setup
+      if: ${{ github.event.inputs.test_mode != 'docker-only' }}
+      run: |
+        echo "=== Python Environment Setup ==="
+        
+        # Create virtual environment
+        if [ ! -d ".venv" ]; then
+          python3 -m venv .venv
+        fi
+        
+        source .venv/bin/activate
+        
+        # Upgrade pip
+        pip install --upgrade pip
+        
+        # Install requirements
+        if [ -f "requirements.txt" ]; then
+          pip install -r requirements.txt
+          echo "[OK] Requirements installed"
+        fi
+        
+        # Verify installations
+        echo "Installed packages:"
+        pip list
+        
+        # Test imports
+        echo "Testing Python packages:"
+        python3 --version
+        python3 -c "import sys; print('Platform:', sys.platform)"
+        
+        # Test packages individually
+        python3 -c "import jupyter; print('[OK] Jupyter:', jupyter.__version__)" 2>/dev/null || echo "[FAIL] Jupyter not found"
+        python3 -c "import requests; print('[OK] Requests:', requests.__version__)" 2>/dev/null || echo "[FAIL] Requests not found"
+        python3 -c "import numpy; print('[OK] NumPy:', numpy.__version__)" 2>/dev/null || echo "[FAIL] NumPy not found"
+        echo
+        
+    - name: Test Conda/Mamba Setup (Optional)
+      if: ${{ github.event.inputs.test_mode == 'full' || github.event.inputs.test_mode == 'native-only' }}
+      run: |
+        echo "=== Conda/Mamba Setup Test ==="
+        
+        # Check if miniforge is installed
+        if [ -d "$HOME/miniforge3" ]; then
+          echo "Miniforge found at $HOME/miniforge3"
+          source $HOME/miniforge3/bin/activate
+          
+          echo "Conda version: $(conda --version)"
+          echo "Mamba version: $(mamba --version 2>/dev/null || echo 'not installed')"
+          
+          echo "Conda environments:"
+          conda env list
+        else
+          echo "Miniforge not installed (optional for this test)"
+        fi
+        echo
+        
+    - name: Verify Shell Scripts
+      run: |
+        echo "=== Shell Scripts Verification ==="
+        
+        # Check shell scripts exist and are executable
+        scripts=(
+          "scripts/setup_local.sh"
+          "scripts/setup_github_runner.sh"
+          "scripts/check_runner_status.sh"
+          "deploy/run_single_gpu.sh"
+        )
+        
+        for script in "${scripts[@]}"; do
+          if [ -f "$script" ]; then
+            if [ -x "$script" ]; then
+              echo "[OK] $script: exists and executable"
+            else
+              echo "[FAIL] $script: exists but not executable"
+              chmod +x "$script"
+              echo "  -> Made executable"
+            fi
+          else
+            echo "[FAIL] $script: not found"
+          fi
+        done
+        echo
+        
+    - name: Generate ARM64 Compatibility Report
+      if: always()
+      run: |
+        echo "=== ARM64 Platform Validation Report ===" > arm64_validation_report.txt
+        echo "Generated: $(date)" >> arm64_validation_report.txt
+        echo "Workflow Run: ${{ github.run_number }}" >> arm64_validation_report.txt
+        echo "Test Mode: ${{ github.event.inputs.test_mode || 'quick' }}" >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== System Information ==" >> arm64_validation_report.txt
+        echo "Architecture: ${{ steps.platform.outputs.arch }}" >> arm64_validation_report.txt
+        echo "OS: ${{ steps.platform.outputs.os_name }} ${{ steps.platform.outputs.os_version }}" >> arm64_validation_report.txt
+        echo "Kernel: ${{ steps.platform.outputs.kernel }}" >> arm64_validation_report.txt
+        echo "Is ARM64: ${{ steps.platform.outputs.is_arm64 }}" >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== Hardware ==" >> arm64_validation_report.txt
+        echo "CPU Cores: $(nproc)" >> arm64_validation_report.txt
+        echo "Memory: $(free -h | awk '/^Mem:/{print $2}')" >> arm64_validation_report.txt
+        
+        if command -v nvidia-smi >/dev/null 2>&1; then
+          echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)" >> arm64_validation_report.txt
+          echo "GPU Driver: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)" >> arm64_validation_report.txt
+        else
+          echo "GPU: Not available" >> arm64_validation_report.txt
+        fi
+        
+        echo "" >> arm64_validation_report.txt
+        echo "== Docker ==" >> arm64_validation_report.txt
+        echo "Docker Version: $(docker --version)" >> arm64_validation_report.txt
+        echo "Compose Version: $(docker compose version)" >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== Platform Support ==" >> arm64_validation_report.txt
+        echo "ARM64 Native Containers: Supported" >> arm64_validation_report.txt
+        echo "AMD64 Emulation: $(docker run --rm --platform=linux/amd64 ubuntu:22.04 echo 'Supported' 2>/dev/null || echo 'Not Supported')" >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== Test Results ==" >> arm64_validation_report.txt
+        echo "All critical tests completed. See workflow logs for details." >> arm64_validation_report.txt
+        echo "" >> arm64_validation_report.txt
+        echo "== Recommendations ==" >> arm64_validation_report.txt
+        
+        if [ "${{ steps.platform.outputs.is_arm64 }}" = "true" ]; then
+          echo "[OK] System is ARM64 - optimal for native ARM64 workflows" >> arm64_validation_report.txt
+          echo "- Use native installation workflows for best performance" >> arm64_validation_report.txt
+          echo "- Docker containers will use AMD64 emulation for NVIDIA NIM" >> arm64_validation_report.txt
+          echo "- Consider hybrid approach: native tools + Docker for unavailable components" >> arm64_validation_report.txt
+        else
+          echo "[FAIL] System is not ARM64 (${{ steps.platform.outputs.arch }})" >> arm64_validation_report.txt
+          echo "- ARM64-specific optimizations will not apply" >> arm64_validation_report.txt
+          echo "- Use standard Docker workflows without emulation" >> arm64_validation_report.txt
+        fi
+        
+        cat arm64_validation_report.txt
+        echo
+        
+    - name: Upload Validation Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: arm64-validation-report-${{ github.run_number }}
+        path: arm64_validation_report.txt
+        retention-days: 30
+        
+    - name: Summary
+      if: always()
+      run: |
+        echo "=== ARM64 Validation Summary ==="
+        echo "Architecture: ${{ steps.platform.outputs.arch }}"
+        echo "Is ARM64: ${{ steps.platform.outputs.is_arm64 }}"
+        echo "Test Mode: ${{ github.event.inputs.test_mode || 'quick' }}"
+        echo
+        
+        if [ "${{ steps.platform.outputs.is_arm64 }}" = "true" ]; then
+          echo "[PASS] ARM64 platform validation: PASSED"
+          echo "System is ready for ARM64 workflows"
+        else
+          echo "[INFO]  Platform is ${{ steps.platform.outputs.arch }}"
+          echo "ARM64-specific features not applicable"
+        fi

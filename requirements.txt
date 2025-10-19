@@ -1,0 +1,12 @@
+# NVIDIA BioNeMo Blueprint: Protein Binder Design Requirements
+# This file lists the Python dependencies needed to run the protein binder design notebook
+
+# Core dependencies for notebook execution
+jupyter>=1.0.0
+requests>=2.25.0
+ipykernel>=6.0.0
+
+# Optional dependencies for enhanced functionality
+matplotlib>=3.5.0  # For plotting and visualization if needed
+numpy>=1.21.0      # For numerical operations
+pandas>=1.3.0      # For data manipulation if needed

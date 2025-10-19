@@ -2,9 +2,9 @@ name: protein-binder-design
 
 services:
   ## AlphaFold2
-  ## AlphaFold2 is pinned to GPU 0
+  ## Modified for single GPU system
   ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
-  ## For native ARM64 performance, consider using the native installation workflow instead.
+  ## For better performance on ARM64, use the native installation workflow.
   alphafold:
     image: nvcr.io/nim/deepmind/alphafold2:2.1
     pull_policy: always
@@ -19,17 +19,15 @@ services:
           devices:
             - driver: "nvidia"
               capabilities: [gpu]
-              device_ids: ['0']
     environment:
       - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/opt/nim/.cache
-      - NIM_DISABLE_MODEL_DOWNLOAD=False ## Set this to True to disable model download.
+      - NIM_DISABLE_MODEL_DOWNLOAD=False
       - CUDA_VISIBLE_DEVICES=0
     platform: linux/amd64  # NVIDIA NIM containers require AMD64
-
+    profiles: ["alphafold"]
 
   ## RFDiffusion
-  ## RFDiffusion shares GPU 0 with AlphaFold2 (modified for single GPU setup)
   ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
   rfdiffusion:
     image: nvcr.io/nim/ipd/rfdiffusion:2.0
@@ -45,12 +43,12 @@ services:
           devices:
             - driver: "nvidia"
               capabilities: [gpu]
-              device_ids: ['0']
     environment:
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
+      - CUDA_VISIBLE_DEVICES=0
     platform: linux/amd64  # NVIDIA NIM containers require AMD64
-
+    profiles: ["rfdiffusion"]
 
   ## ProteinMPNN
   ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
@@ -68,11 +66,12 @@ services:
           devices:
             - driver: "nvidia"
               capabilities: [gpu]
-              device_ids: ['0']
     environment:
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
+      - CUDA_VISIBLE_DEVICES=0
     platform: linux/amd64  # NVIDIA NIM containers require AMD64
+    profiles: ["proteinmpnn"]
 
   ## AlphaFold2-Multimer
   ## Note: NVIDIA NIM containers are AMD64-only. On ARM64 systems, Docker will use emulation.
@@ -90,10 +89,10 @@ services:
           devices:
             - driver: "nvidia"
               capabilities: [gpu]
-              device_ids: ['0']
     environment:
       - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NIM_CACHE_PATH=/opt/nim/.cache/
       - NIM_DISABLE_MODEL_DOWNLOAD=False
       - CUDA_VISIBLE_DEVICES=0
     platform: linux/amd64  # NVIDIA NIM containers require AMD64
+    profiles: ["alphafold-multimer"]
