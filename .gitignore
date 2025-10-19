@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .next/
+
 .Python
 build/
 develop-eggs/
@@ -17,6 +18,7 @@ parts/
 sdist/
 var/
 wheels/
+
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -38,6 +40,17 @@ env/
 *.ipynb_checkpoints/
 
 # IDEs
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
 .vscode/
 .idea/
 *.swp
@@ -79,3 +92,22 @@ pipeline_run_*/
 # System verification reports
 *_report.txt
 *_validation_report.txt
+=======
+# Jupyter
+.ipynb_checkpoints/
+
+# Node.js (for dashboard)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js (for dashboard)
+.next/
+out/
+
+# Docker
+.dockerignore
+
+# Test outputs
+*.log

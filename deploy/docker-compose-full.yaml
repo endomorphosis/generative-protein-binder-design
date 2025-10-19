@@ -1,0 +1,134 @@
+name: protein-binder-design
+
+services:
+  ## AlphaFold2
+  ## AlphaFold2 is pinned to GPU 0
+  alphafold:
+    image: nvcr.io/nim/deepmind/alphafold2:2.1
+    pull_policy: always
+    runtime: nvidia
+    ports:
+      - "8081:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/opt/nim/.cache/
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: "nvidia"
+              capabilities: [gpu]
+              device_ids: ['0']
+    environment:
+      - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NIM_CACHE_PATH=/opt/nim/.cache
+      - NIM_DISABLE_MODEL_DOWNLOAD=False ## Set this to True to disable model download.
+      - CUDA_VISIBLE_DEVICES=0
+
+
+  ## RFDiffusion
+  ## RFDiffusion is pinned to GPU 1.
+  rfdiffusion:
+    image: nvcr.io/nim/ipd/rfdiffusion:2.0
+    pull_policy: always
+    runtime: nvidia
+    ports:
+      - "8082:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/home/nvs/.cache/
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: "nvidia"
+              capabilities: [gpu]
+              device_ids: ['1']
+    environment:
+      - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
+
+
+  proteinmpnn:
+    image: nvcr.io/nim/ipd/proteinmpnn:1.0
+    pull_policy: always
+    runtime: nvidia
+    ports:
+      - "8083:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/home/nvs/.cache/
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: "nvidia"
+              capabilities: [gpu]
+              device_ids: ['2']
+    environment:
+      - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
+
+  alphafold-multimer:
+    image: nvcr.io/nim/deepmind/alphafold2-multimer:2.1
+    pull_policy: always
+    runtime: nvidia
+    ports:
+      - "8084:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/opt/nim/.cache/
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: "nvidia"
+              capabilities: [gpu]
+              device_ids: ['3']
+    environment:
+      - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NIM_CACHE_PATH=/opt/nim/.cache/
+      - NIM_DISABLE_MODEL_DOWNLOAD=False
+      - CUDA_VISIBILE_DEVICES=3
+
+  ## MCP Server
+  ## Model Context Protocol server for workflow management
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ALPHAFOLD_URL=http://alphafold:8000
+      - RFDIFFUSION_URL=http://rfdiffusion:8000
+      - PROTEINMPNN_URL=http://proteinmpnn:8000
+      - ALPHAFOLD_MULTIMER_URL=http://alphafold-multimer:8000
+    depends_on:
+      - alphafold
+      - rfdiffusion
+      - proteinmpnn
+      - alphafold-multimer
+
+  ## MCP Dashboard
+  ## Web-based dashboard for interacting with the MCP server
+  mcp-dashboard:
+    build:
+      context: ./mcp-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_MCP_SERVER_URL=http://localhost:8000
+    depends_on:
+      - mcp-server
+
+  ## Jupyter Notebook Server
+  ## User-facing container with Jupyter for interactive work
+  jupyter:
+    build:
+      context: ./user-container
+      dockerfile: Dockerfile
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./src:/workspace/notebooks
+      - ./data:/workspace/data
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
