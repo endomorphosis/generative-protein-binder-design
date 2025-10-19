@@ -34,74 +34,31 @@ fi
 
 echo "Available ARM64 Workflows:"
 echo ""
-echo "1. ARM64 Complete Porting Workflow (arm64-complete-port.yml)"
-echo "   → Full validation and testing on ARM64"
-echo "   → Platform detection, validation, Python testing, Docker testing"
-echo "   → Estimated time: 15-40 minutes"
+echo "1. ARM64 Validation Workflow (arm64-validation.yml)"
+echo "   → ARM64 compatibility check and validation"
+echo "   → Platform detection, Docker testing, Python validation"
+echo "   → Estimated time: 10-15 minutes"
 echo ""
-echo "2. ARM64 Validation Workflow (arm64-validation.yml)"
-echo "   → Quick ARM64 compatibility check"
-echo "   → Platform detection and basic validation"
+echo "2. Jupyter Notebook Test (jupyter-test.yml)"
+echo "   → Test scientific computing environment on ARM64"
+echo "   → Python packages, GPU access, notebook execution"
 echo "   → Estimated time: 5-10 minutes"
 echo ""
-echo "3. Protein Design Pipeline (protein-design-pipeline.yml)"
-echo "   → Full protein design workflow"
-echo "   → Can be run on ARM64 with use_native=true"
-echo "   → Estimated time: Variable based on workload"
+echo "3. Runner Connection Test (runner-test.yml)"
+echo "   → Quick ARM64 runner connectivity test"
+echo "   → System info, GPU check, environment validation"
+echo "   → Estimated time: 2-5 minutes"
+echo ""
+echo "4. Native Installation Test (native-install-test.yml) [Manual dispatch only]"
+echo "   → Test native ARM64 installation of protein tools"
+echo "   → AlphaFold2, RFDiffusion, ProteinMPNN testing"
+echo "   → Estimated time: 30-60 minutes"
 echo ""
 
-read -p "Which workflow would you like to trigger? (1-3, or q to quit): " choice
+read -p "Which workflow would you like to trigger? (1-4, or q to quit): " choice
 
 case $choice in
     1)
-        echo ""
-        echo "Triggering ARM64 Complete Porting Workflow..."
-        echo ""
-        read -p "Run full pipeline tests? (y/n, default: y): " run_pipeline
-        run_pipeline=${run_pipeline:-y}
-        
-        read -p "Run all validation tests? (y/n, default: y): " run_validation
-        run_validation=${run_validation:-y}
-        
-        if [ "$run_pipeline" = "y" ]; then
-            run_pipeline_flag="true"
-        else
-            run_pipeline_flag="false"
-        fi
-        
-        if [ "$run_validation" = "y" ]; then
-            run_validation_flag="true"
-        else
-            run_validation_flag="false"
-        fi
-        
-        echo ""
-        echo "Configuration:"
-        echo "  - Run full pipeline: $run_pipeline_flag"
-        echo "  - Run validation tests: $run_validation_flag"
-        echo ""
-        
-        read -p "Proceed with triggering workflow? (y/n): " confirm
-        if [ "$confirm" = "y" ]; then
-            gh workflow run arm64-complete-port.yml \
-                -f run_full_pipeline=$run_pipeline_flag \
-                -f run_validation_tests=$run_validation_flag
-            
-            echo ""
-            echo "✓ Workflow triggered successfully!"
-            echo ""
-            echo "Monitor progress with:"
-            echo "  gh run watch"
-            echo "  gh run list --workflow=arm64-complete-port.yml --limit 5"
-            echo ""
-            echo "Or visit: https://github.com/hallucinate-llc/generative-protein-binder-design/actions"
-            echo ""
-        else
-            echo "Cancelled."
-        fi
-        ;;
-        
-    2)
         echo ""
         echo "Triggering ARM64 Validation Workflow..."
         echo ""
@@ -129,43 +86,70 @@ case $choice in
         fi
         ;;
         
-    3)
+    2)
         echo ""
-        echo "Triggering Protein Design Pipeline..."
+        echo "Triggering Jupyter Notebook Test..."
         echo ""
-        read -p "Use native ARM64 execution? (y/n, default: y): " use_native
-        use_native=${use_native:-y}
-        
-        read -p "Target protein PDB ID (default: 7BZ5): " target_protein
-        target_protein=${target_protein:-7BZ5}
-        
-        read -p "Number of designs (default: 10): " num_designs
-        num_designs=${num_designs:-10}
+        read -p "Notebook path (default: src/protein-binder-design.ipynb): " notebook_path
+        notebook_path=${notebook_path:-src/protein-binder-design.ipynb}
         
         echo ""
         echo "Configuration:"
-        echo "  - Use native: $use_native"
-        echo "  - Target protein: $target_protein"
-        echo "  - Number of designs: $num_designs"
+        echo "  - Notebook: $notebook_path"
         echo ""
         
         read -p "Proceed with triggering workflow? (y/n): " confirm
         if [ "$confirm" = "y" ]; then
-            gh workflow run protein-design-pipeline.yml \
-                -f use_native=$use_native \
-                -f target_protein=$target_protein \
-                -f num_designs=$num_designs
+            gh workflow run "Jupyter Notebook Test" -f notebook_path="$notebook_path"
             
             echo ""
             echo "✓ Workflow triggered successfully!"
             echo ""
             echo "Monitor progress with:"
             echo "  gh run watch"
-            echo "  gh run list --workflow=protein-design-pipeline.yml --limit 5"
+            echo "  gh run list --workflow='Jupyter Notebook Test' --limit 5"
             echo ""
         else
             echo "Cancelled."
         fi
+        ;;
+        
+    3)
+        echo ""
+        echo "Triggering Runner Connection Test..."
+        echo ""
+        echo "This will test basic ARM64 runner connectivity and system resources."
+        echo ""
+        
+        read -p "Proceed with triggering workflow? (y/n): " confirm
+        if [ "$confirm" = "y" ]; then
+            gh workflow run "Runner Connection Test"
+            
+            echo ""
+            echo "✓ Workflow triggered successfully!"
+            echo ""
+            echo "Monitor progress with:"
+            echo "  gh run watch"
+            echo "  gh run list --workflow='Runner Connection Test' --limit 5"
+            echo ""
+        else
+            echo "Cancelled."
+        fi
+        ;;
+        
+    4)
+        echo ""
+        echo "Note: Native Installation Test requires manual dispatch from GitHub web interface"
+        echo "This workflow tests installation of protein design tools on ARM64."
+        echo ""
+        echo "To run this workflow:"
+        echo "1. Visit: https://github.com/hallucinate-llc/generative-protein-binder-design/actions"
+        echo "2. Find 'Native Installation Test' workflow"
+        echo "3. Click 'Run workflow'"
+        echo "4. Select component: alphafold2, rfdiffusion, proteinmpnn, or all"
+        echo ""
+        echo "This workflow is not available via CLI because it's on a feature branch."
+        echo ""
         ;;
         
     q|Q)

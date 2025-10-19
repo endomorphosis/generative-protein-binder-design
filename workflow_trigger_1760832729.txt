@@ -1,8 +1,0 @@
-ARM64 Workflow Trigger
-Timestamp: 2025-10-18 17:12:09 PDT
-Method: Git push trigger
-Branch: dgx-spark
-Commit: a7231cf
-
-This file was created to trigger the Runner Connection Test workflow
-which validates ARM64 system resources and runner connectivity.
