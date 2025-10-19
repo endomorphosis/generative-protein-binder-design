@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Jupyter and related packages
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org \
     jupyter \
     jupyterlab \
     notebook \
@@ -26,9 +26,6 @@ RUN pip install --no-cache-dir \
 # Create a non-root user
 RUN useradd -m -u 1000 scientist && \
     chown -R scientist:scientist /workspace
-
-# Copy the notebook
-COPY --chown=scientist:scientist ../src/protein-binder-design.ipynb /workspace/
 
 USER scientist
 

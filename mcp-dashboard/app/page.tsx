@@ -33,12 +33,8 @@ export default function Home() {
                 NVIDIA BioNeMo Blueprint - MCP Dashboard
               </p>
             </div>
-            <img 
-              src="/nvidia-logo.png" 
-              alt="NVIDIA Logo" 
-              className="h-12"
-              onError={(e) => { e.currentTarget.style.display = 'none' }}
-            />
+            {/* NVIDIA Logo would be displayed here if available */}
+            <div className="h-12"></div>
           </div>
         </header>
 
