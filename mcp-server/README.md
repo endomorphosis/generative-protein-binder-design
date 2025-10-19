@@ -34,4 +34,4 @@ API documentation available at http://localhost:8000/docs
 
 ## API Endpoints
 
-See [DOCKER_MCP_README.md](../DOCKER_MCP_README.md) for detailed API documentation.
+See [DOCKER_MCP_README.md](../docs/DOCKER_MCP_README.md) for detailed API documentation.

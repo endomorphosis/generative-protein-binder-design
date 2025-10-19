@@ -60,7 +60,7 @@ export HOST_NIM_CACHE=~/.cache/nim
 
 3. Start all services:
 ```bash
-docker compose -f docker-compose-full.yaml up
+docker compose -f ../deploy/docker-compose-full.yaml up
 ```
 
 ### Accessing Services
@@ -175,7 +175,7 @@ Access Jupyter at http://localhost:8888 (no token required in default configurat
 To run with a token for security:
 
 ```bash
-docker compose -f docker-compose-full.yaml run -p 8888:8888 jupyter \
+docker compose -f ../deploy/docker-compose-full.yaml run -p 8888:8888 jupyter \
   jupyter notebook --ip=0.0.0.0 --NotebookApp.token='your-secure-token'
 ```
 
@@ -200,7 +200,7 @@ docker compose -f docker-compose-full.yaml run -p 8888:8888 jupyter \
 
 ### Option 1: Full Stack (Recommended for Production)
 ```bash
-docker compose -f docker-compose-full.yaml up
+docker compose -f ../deploy/docker-compose-full.yaml up
 ```
 
 Includes all services: NIMs, MCP Server, Dashboard, and Jupyter.
@@ -256,7 +256,7 @@ curl http://localhost:8084/v1/health/ready
 
 Check logs:
 ```bash
-docker compose -f docker-compose-full.yaml logs jupyter
+docker compose -f ../deploy/docker-compose-full.yaml logs jupyter
 ```
 
 Ensure volumes are properly mounted.

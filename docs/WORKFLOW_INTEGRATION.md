@@ -297,7 +297,7 @@ The server implements the Model Context Protocol v1.0:
 
 Run the test suite:
 ```bash
-bash test-mcp-server.sh
+bash scripts/test-mcp-server.sh
 ```
 
 **Tests Verify:**
@@ -391,7 +391,7 @@ cd mcp-dashboard && npm run dev
 
 ### Production Mode (Docker)
 ```bash
-docker compose -f docker-compose-full.yaml up
+docker compose -f ../deploy/docker-compose-full.yaml up
 
 # Access at:
 # - Dashboard: http://localhost:3000

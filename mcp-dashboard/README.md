@@ -45,4 +45,4 @@ npm run build
 npm start
 ```
 
-See [DOCKER_MCP_README.md](../DOCKER_MCP_README.md) for more information.
+See [DOCKER_MCP_README.md](../docs/DOCKER_MCP_README.md) for more information.
