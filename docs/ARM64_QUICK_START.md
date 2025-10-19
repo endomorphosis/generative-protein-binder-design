@@ -28,7 +28,7 @@ This guide helps you quickly continue the ARM64 porting process using the automa
 ### Option 1: Interactive Helper (Recommended)
 
 ```bash
-./continue_arm64_port.sh
+../scripts/continue_arm64_port.sh
 ```
 
 This interactive script will:
@@ -41,7 +41,7 @@ This interactive script will:
 ### Option 2: Workflow Trigger Helper
 
 ```bash
-./trigger_arm64_workflow.sh
+../scripts/trigger_arm64_workflow.sh
 ```
 
 This script helps you:
@@ -71,7 +71,7 @@ The workflow `arm64-complete-port.yml` needs to run on ARM64 hardware.
 **Trigger it:**
 ```bash
 # Using the helper
-./trigger_arm64_workflow.sh
+../scripts/trigger_arm64_workflow.sh
 # Select option 1
 
 # Or manually
@@ -147,11 +147,11 @@ Follow the deployment guide: [`ARM64_DEPLOYMENT.md`](ARM64_DEPLOYMENT.md)
 
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `continue_arm64_port.sh` | Interactive guide to continue porting | `./continue_arm64_port.sh` |
-| `trigger_arm64_workflow.sh` | Trigger ARM64 workflows | `./trigger_arm64_workflow.sh` |
-| `verify_arm64_port.sh` | Verify all ARM64 changes | `./verify_arm64_port.sh` |
-| `detect_platform.sh` | Detect platform and show recommendations | `./detect_platform.sh` |
-| `check_runner_status.sh` | Check GitHub runner status | `./check_runner_status.sh` |
+| `continue_arm64_port.sh` | Interactive guide to continue porting | `../scripts/continue_arm64_port.sh` |
+| `trigger_arm64_workflow.sh` | Trigger ARM64 workflows | `../scripts/trigger_arm64_workflow.sh` |
+| `verify_arm64_port.sh` | Verify all ARM64 changes | `../scripts/verify_arm64_port.sh` |
+| `detect_platform.sh` | Detect platform and show recommendations | `../scripts/detect_platform.sh` |
+| `check_runner_status.sh` | Check GitHub runner status | `../scripts/check_runner_status.sh` |
 
 ### Documentation
 
@@ -178,7 +178,7 @@ Follow the deployment guide: [`ARM64_DEPLOYMENT.md`](ARM64_DEPLOYMENT.md)
 Run verification to check current status:
 
 ```bash
-./verify_arm64_port.sh
+../scripts/verify_arm64_port.sh
 ```
 
 **Expected output:**
@@ -232,7 +232,7 @@ The ARM64 porting is complete when:
 
 1. **Run the helper script:**
    ```bash
-   ./continue_arm64_port.sh
+   ../scripts/continue_arm64_port.sh
    ```
 
 2. **Select option to trigger workflow** (option 'f')
@@ -272,7 +272,7 @@ The ARM64 porting is complete when:
 
 ```bash
 # Check runner status
-./check_runner_status.sh
+../scripts/check_runner_status.sh
 
 # Verify workflow file
 python3 -c "import yaml; yaml.safe_load(open('.github/workflows/arm64-complete-port.yml'))"
@@ -299,13 +299,13 @@ gh run download <run-id>
 
 - **GitHub Actions:** https://github.com/hallucinate-llc/generative-protein-binder-design/actions
 - **Workflow Documentation:** `.github/workflows/README.md`
-- **Platform Detection:** Run `./detect_platform.sh`
+- **Platform Detection:** Run `../scripts/detect_platform.sh`
 
 ## 🎉 Summary
 
 The ARM64 porting infrastructure is **ready to execute**. The next step is to:
 
-1. **Run `./continue_arm64_port.sh`** for an interactive guide
+1. **Run `../scripts/continue_arm64_port.sh`** for an interactive guide
 2. **Trigger the workflow** on an ARM64 system or runner
 3. **Monitor and validate** the results
 4. **Deploy to production** following the deployment guide

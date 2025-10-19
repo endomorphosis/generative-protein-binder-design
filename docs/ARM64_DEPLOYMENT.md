@@ -9,7 +9,7 @@ This guide provides comprehensive instructions for deploying the Protein Binder 
 Run the platform detection script to understand your system:
 
 ```bash
-./detect_platform.sh
+../scripts/detect_platform.sh
 ```
 
 This will automatically detect your architecture and provide tailored recommendations.
@@ -395,7 +395,7 @@ nvidia-smi dmon -s pucvmet -c 100 > gpu_usage.log
 
 1. **Assess compatibility:**
    ```bash
-   ./detect_platform.sh
+   ../scripts/detect_platform.sh
    gh workflow run arm64-validation.yml
    ```
 
@@ -433,7 +433,7 @@ For ARM64-specific issues:
    - Docker version
    - GPU driver version
    - Error logs
-   - Output from `./detect_platform.sh`
+   - Output from `../scripts/detect_platform.sh`
 
 ## Contributing
 

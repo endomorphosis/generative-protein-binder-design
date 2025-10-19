@@ -25,7 +25,7 @@ Choose the setup method that best fits your system:
 For a streamlined setup experience, run the automated setup script:
 
 ```bash
-./setup_local.sh
+../scripts/setup_local.sh
 ```
 
 This script will check your system requirements, install dependencies, and configure your environment.

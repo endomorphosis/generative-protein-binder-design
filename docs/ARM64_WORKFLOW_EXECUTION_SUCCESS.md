@@ -56,7 +56,7 @@ Based on successful execution, you can now run:
 ### **1. Runner Connection Test** ✅ **VERIFIED WORKING**
 ```bash
 # Method 1: Git push trigger (recommended)
-./trigger_workflow_push.sh
+../scripts/trigger_workflow_push.sh
 
 # Method 2: Direct push
 echo "test" > test_$(date +%s).txt && git add . && git commit -m "Test ARM64" && git push origin HEAD
@@ -72,7 +72,7 @@ git add . && git commit -m "Test Jupyter on ARM64" && git push origin HEAD
 ### **3. System Health Monitoring**
 ```bash
 # Manual monitoring
-./check_runner_status.sh
+../scripts/check_runner_status.sh
 tail -f /home/barberb/actions-runner/_diag/Runner_*.log
 ```
 
@@ -124,7 +124,7 @@ Your DGX system is now efficiently powering automated research workflows! 🧬�
 
 ## 📞 **Monitoring Resources**
 
-- **Runner Status**: `./check_runner_status.sh`
+- **Runner Status**: `../scripts/check_runner_status.sh`
 - **GitHub Actions**: https://github.com/hallucinate-llc/generative-protein-binder-design/actions
 - **Worker Logs**: `/home/barberb/actions-runner/_diag/Worker_*.log`
-- **Workflow Triggers**: `./trigger_workflow_push.sh`
+- **Workflow Triggers**: `../scripts/trigger_workflow_push.sh`

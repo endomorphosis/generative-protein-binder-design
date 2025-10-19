@@ -30,40 +30,40 @@ This project supports both **AMD64** and **ARM64** architectures:
   - Docker approach: AMD64 containers run via emulation (may have performance impact)
   - Native approach: Install tools directly on ARM64 for better performance
 
-Run `./detect_platform.sh` to check your system and get platform-specific recommendations.
+Run `./scripts/detect_platform.sh` to check your system and get platform-specific recommendations.
 
 ## Get Started
 
 ### Quick Platform Check
 ```bash
-./detect_platform.sh
+./scripts/detect_platform.sh
 ```
 This script will detect your system architecture and provide tailored recommendations.
 
 ### Documentation
 
 #### General Setup
-- [🚀 Local Setup Guide](LOCAL_SETUP.md) - Comprehensive local development setup
-- [📋 System Verification Report](SYSTEM_VERIFICATION.md) - Check your system compatibility
+- [🚀 Local Setup Guide](docs/LOCAL_SETUP.md) - Comprehensive local development setup
+- [📋 System Verification Report](docs/SYSTEM_VERIFICATION.md) - Check your system compatibility
 - [Deploy with Docker Compose](deploy)
 - [Deploy with Helm](protein-design-chart)
 - [Source code](src)
 
 #### ARM64-Specific Guides
-- [📘 **ARM64 Complete Guide**](ARM64_COMPLETE_GUIDE.md) - **NEW: Comprehensive ARM64 support guide**
-- [🔌 **ARM64 CUDA Fallback Guide**](ARM64_CUDA_FALLBACK_GUIDE.md) - **NEW: Fallback solutions for ARM64 CUDA**
-- [🚀 ARM64 Quick Start](ARM64_QUICK_START.md) - Quick start for ARM64 systems
-- [✅ ARM64 Completion Checklist](ARM64_COMPLETION_CHECKLIST.md) - Step-by-step guide to complete ARM64 porting
-- [🤖 ARM64 Automation Summary](ARM64_AUTOMATION_SUMMARY.md) - Overview of automated ARM64 porting
-- [🏗️ ARM64 Deployment Guide](ARM64_DEPLOYMENT.md) - Complete guide for ARM64 deployment
-- [⚙️ ARM64 Compatibility Guide](ARM64_COMPATIBILITY.md) - Understanding ARM64 compatibility
-- [🔧 ARM64 Native Installation](ARM64_NATIVE_INSTALLATION.md) - Advanced: Install tools natively on ARM64
+- [📘 **ARM64 Complete Guide**](docs/ARM64_COMPLETE_GUIDE.md) - **NEW: Comprehensive ARM64 support guide**
+- [🔌 **ARM64 CUDA Fallback Guide**](docs/ARM64_CUDA_FALLBACK_GUIDE.md) - **NEW: Fallback solutions for ARM64 CUDA**
+- [🚀 ARM64 Quick Start](docs/ARM64_QUICK_START.md) - Quick start for ARM64 systems
+- [✅ ARM64 Completion Checklist](docs/ARM64_COMPLETION_CHECKLIST.md) - Step-by-step guide to complete ARM64 porting
+- [🤖 ARM64 Automation Summary](docs/ARM64_AUTOMATION_SUMMARY.md) - Overview of automated ARM64 porting
+- [🏗️ ARM64 Deployment Guide](docs/ARM64_DEPLOYMENT.md) - Complete guide for ARM64 deployment
+- [⚙️ ARM64 Compatibility Guide](docs/ARM64_COMPATIBILITY.md) - Understanding ARM64 compatibility
+- [🔧 ARM64 Native Installation](docs/ARM64_NATIVE_INSTALLATION.md) - Advanced: Install tools natively on ARM64
 
 ## Quick Start
 
 ### Automated Setup (Recommended)
 ```bash
-./setup_local.sh
+./scripts/setup_local.sh
 ```
 
 ### Manual Setup

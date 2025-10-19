@@ -60,14 +60,14 @@ jobs:
     - name: Run verification script
       run: |
         echo "=== Running ARM64 Port Verification ==="
-        chmod +x verify_arm64_port.sh
-        ./verify_arm64_port.sh
+        chmod +x scripts/verify_arm64_port.sh
+        ./scripts/verify_arm64_port.sh
         
     - name: Run platform detection
       run: |
         echo "=== Running Platform Detection ==="
-        chmod +x detect_platform.sh
-        ./detect_platform.sh
+        chmod +x scripts/detect_platform.sh
+        ./scripts/detect_platform.sh
         
     - name: Verify Docker configuration
       run: |

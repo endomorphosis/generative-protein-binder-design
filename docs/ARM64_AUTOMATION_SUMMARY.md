@@ -4,7 +4,7 @@
 
 You asked me to "continue using the workflows and the github actions to port this entire project to arm", and I have created a comprehensive automated solution to complete the ARM64 porting process.
 
-> **👉 To continue the ARM64 porting process, see [ARM64_QUICK_START.md](ARM64_QUICK_START.md) or run `./continue_arm64_port.sh`**
+> **👉 To continue the ARM64 porting process, see [ARM64_QUICK_START.md](ARM64_QUICK_START.md) or run `../scripts/continue_arm64_port.sh`**
 
 ## What I've Done
 
@@ -68,7 +68,7 @@ Status: Should show as running or completed
 **Option 2: Command Line**
 ```bash
 # Check runner status
-./check_runner_status.sh
+../scripts/check_runner_status.sh
 
 # List workflow runs
 gh run list --workflow=arm64-complete-port.yml
@@ -325,13 +325,13 @@ You can now monitor the workflow execution and review the results when it comple
 **Quick Start: Continue ARM64 Porting**
 ```bash
 # Interactive helper script to continue porting
-./continue_arm64_port.sh
+../scripts/continue_arm64_port.sh
 ```
 
 **For workflow status:**
 - Check: https://github.com/hallucinate-llc/generative-protein-binder-design/actions
 - Read: `ARM64_WORKFLOW_STATUS.md`
-- Use helper: `./continue_arm64_port.sh`
+- Use helper: `../scripts/continue_arm64_port.sh`
 
 **For detailed completion steps:**
 - Read: `ARM64_COMPLETION_CHECKLIST.md` - **Step-by-step checklist for remaining tasks**

@@ -71,7 +71,7 @@ System: Linux (bash shell)
 
 ## Next Steps
 
-1. Run the setup script: `./setup_local.sh`
+1. Run the setup script: `../scripts/setup_local.sh`
 2. Follow prompts to configure NGC API key
 3. Start Docker services: `cd deploy && docker compose up`
 4. Monitor initial model downloads
