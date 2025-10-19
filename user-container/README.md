@@ -12,7 +12,7 @@ docker run -p 8888:8888 -v $(pwd)/../src:/workspace/notebooks jupyter-protein-de
 
 ### Using Docker Compose
 ```bash
-docker compose -f ../docker-compose-full.yaml up jupyter
+docker compose -f ../deploy/docker-compose-full.yaml up jupyter
 ```
 
 Access Jupyter at http://localhost:8888
@@ -40,4 +40,4 @@ docker run -p 8888:8888 jupyter-protein-design \
   jupyter notebook --NotebookApp.token='your-secure-token'
 ```
 
-See [DOCKER_MCP_README.md](../DOCKER_MCP_README.md) for more information.
+See [DOCKER_MCP_README.md](../docs/DOCKER_MCP_README.md) for more information.

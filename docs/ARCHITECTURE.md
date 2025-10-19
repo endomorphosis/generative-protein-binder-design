@@ -169,7 +169,7 @@ GET /api/services/status        # NIM services status
 
 ### Option 1: Full Stack (Production)
 ```yaml
-docker-compose-full.yaml
+../deploy/docker-compose-full.yaml
   - All NIM services
   - MCP Server
   - MCP Dashboard
@@ -261,7 +261,7 @@ Port Mapping:
    - Lint: npm run lint (Dashboard)
    - Type Check: npx tsc --noEmit
    - Build: npm run build
-   - Test: ./test-mcp-server.sh
+   - Test: ./scripts/test-mcp-server.sh
          ↓
 3. Docker Build
    - docker build -t mcp-server mcp-server/
@@ -269,7 +269,7 @@ Port Mapping:
    - docker build -t jupyter-user user-container/
          ↓
 4. Integration Testing
-   - docker compose -f docker-compose-full.yaml up
+   - docker compose -f ../deploy/docker-compose-full.yaml up
          ↓
 5. Deployment
 ```

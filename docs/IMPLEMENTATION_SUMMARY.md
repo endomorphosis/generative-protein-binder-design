@@ -109,7 +109,7 @@ A pre-configured Jupyter environment for interactive work.
 
 ### 4. Infrastructure Files
 
-**docker-compose-full.yaml** (149 lines)
+**../deploy/docker-compose-full.yaml** (149 lines)
 Complete stack definition including:
 - All 4 NIM services (AlphaFold2, RFDiffusion, ProteinMPNN, AlphaFold2-Multimer)
 - MCP Server
@@ -153,7 +153,7 @@ Technical architecture documentation:
 - Scalability recommendations
 - Performance characteristics
 
-**test-mcp-server.sh** (90 lines)
+**./scripts/test-mcp-server.sh** (90 lines)
 Automated test script with 6 tests:
 1. ✅ MCP Server health check
 2. ✅ MCP protocol tools endpoint
@@ -201,7 +201,7 @@ Breakdown:
 All tests pass successfully:
 
 ```bash
-$ ./test-mcp-server.sh
+$ ./scripts/test-mcp-server.sh
 
 ========================================
 MCP Server and Dashboard Test Suite
@@ -257,7 +257,7 @@ Route (app)                              Size     First Load JS
 ### Start the Full Stack
 ```bash
 export NGC_CLI_API_KEY=<your-key>
-docker compose -f docker-compose-full.yaml up
+docker compose -f ../deploy/docker-compose-full.yaml up
 ```
 
 ### Create a Job via API
@@ -318,7 +318,7 @@ For questions or issues, please refer to:
 - QUICKSTART.md - Getting started
 - DOCKER_MCP_README.md - Detailed usage
 - ARCHITECTURE.md - Technical details
-- test-mcp-server.sh - Testing examples
+- ./scripts/test-mcp-server.sh - Testing examples
 
 ---
 

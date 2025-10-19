@@ -45,7 +45,7 @@ chmod -R 777 ~/.cache/nim
 ### 2. Start all services
 
 ```bash
-docker compose -f docker-compose-full.yaml up
+docker compose -f ../deploy/docker-compose-full.yaml up
 ```
 
 This will start:
@@ -131,7 +131,7 @@ curl http://localhost:8000/api/services/status
 Run the included test script to verify everything is working:
 
 ```bash
-./test-mcp-server.sh
+./scripts/test-mcp-server.sh
 ```
 
 ## Troubleshooting
@@ -155,7 +155,7 @@ Run the included test script to verify everything is working:
 ## Next Steps
 
 - Read the [full documentation](DOCKER_MCP_README.md)
-- Explore the [example notebook](src/protein-binder-design.ipynb)
+- Explore the [example notebook](../src/protein-binder-design.ipynb)
 - Check out the [MCP Server API docs](http://localhost:8000/docs)
 
 ## Architecture
