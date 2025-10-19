@@ -86,6 +86,20 @@ class PyTorchSourceBuildFallback:
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 dependencies[tool] = False
         
+        # Check for python3-dev by looking for Python.h
+        python3_dev_paths = [
+            '/usr/include/python3.*/Python.h',
+            '/usr/local/include/python3.*/Python.h',
+        ]
+        try:
+            import glob
+            found_paths = []
+            for pattern in python3_dev_paths:
+                found_paths.extend(glob.glob(pattern))
+            dependencies['python3-dev'] = len(found_paths) > 0
+        except Exception:
+            dependencies['python3-dev'] = False
+        
         # Check for CUDA
         try:
             result = subprocess.run(
@@ -97,13 +111,33 @@ class PyTorchSourceBuildFallback:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             dependencies['cuda'] = False
         
-        # Check for cuDNN (harder to detect, look for library)
-        cudnn_paths = [
+        # Check for cuDNN (look for library files and headers)
+        cudnn_lib_paths = [
             '/usr/local/cuda/lib64/libcudnn.so',
             '/usr/lib/aarch64-linux-gnu/libcudnn.so',
             '/usr/lib/x86_64-linux-gnu/libcudnn.so',
+            '/usr/local/cuda/lib64/libcudnn.so.*',
+            '/usr/lib/aarch64-linux-gnu/libcudnn.so.*',
+            '/usr/lib/x86_64-linux-gnu/libcudnn.so.*',
         ]
-        dependencies['cudnn'] = any(os.path.exists(p) for p in cudnn_paths)
+        cudnn_header_paths = [
+            '/usr/local/cuda/include/cudnn.h',
+            '/usr/include/cudnn.h',
+        ]
+        
+        try:
+            import glob
+            found_libs = []
+            for pattern in cudnn_lib_paths:
+                found_libs.extend(glob.glob(pattern))
+            found_headers = []
+            for path in cudnn_header_paths:
+                if os.path.exists(path):
+                    found_headers.append(path)
+            # cuDNN is available if we find either lib or header
+            dependencies['cudnn'] = len(found_libs) > 0 or len(found_headers) > 0
+        except Exception:
+            dependencies['cudnn'] = False
         
         return dependencies
     
@@ -286,7 +320,7 @@ Prerequisites:
                 if dep == 'cuda':
                     guide += "  - CUDA Toolkit: https://developer.nvidia.com/cuda-downloads\n"
                 elif dep == 'cudnn':
-                    guide += "  - cuDNN: https://developer.nvidia.com/cudnn\n"
+                    guide += "  - cuDNN: https://developer.nvidia.com/cudnn (optional, not critical)\n"
                 elif dep == 'python3-dev':
                     guide += "  - Python development headers: sudo apt install python3-dev\n"
                 else:
@@ -295,13 +329,41 @@ Prerequisites:
             guide += "\n✓ All dependencies are available!\n"
         
         guide += """
-Build Steps:
+Build Options:
+
+Option 1: Use GitHub Actions Workflow (Recommended)
+---------------------------------------------------
+Build PyTorch using GitHub Actions runners (automated, 1-3 hours):
+
+1. Install GitHub CLI:
+   sudo apt install gh  # Ubuntu/Debian
+   brew install gh      # macOS
+
+2. Trigger the build workflow:
+   ./scripts/trigger_pytorch_build.sh
+
+   Or manually:
+   gh workflow run pytorch-arm64-build.yml \\
+     -f cuda_version=11.8 \\
+     -f use_cuda=true \\
+     -f upload_artifact=true
+
+3. Monitor progress:
+   gh run watch
+   # Or visit: https://github.com/.../actions
+
+4. Download artifacts when complete:
+   gh run download <run-id>
+
+Option 2: Local Build (Manual)
+-------------------------------
+Build on your local machine:
 
 1. Generate build script:
-   python3 -m arm64_cuda_fallback.pytorch_source_build generate-script
+   python3 -m arm64_cuda_fallback pytorch-build --generate-script
 
 2. Run the build script:
-   ./pytorch_arm64_build.sh
+   bash ~/pytorch_build/pytorch_arm64_build.sh
 
 3. Wait for build to complete (1-3 hours)
 
@@ -309,12 +371,14 @@ Build Steps:
    python3 -c "import torch; print(torch.__version__)"
 
 Alternative: Use conda-forge
+----------------------------
 If building from source is too complex, try conda-forge:
    conda install pytorch torchvision torchaudio -c pytorch-nightly
 
 Note: conda-forge may not have CUDA support for ARM64 yet.
 
 When to Migrate:
+----------------
 Once PyTorch releases official ARM64 CUDA wheels, migrate with:
    pip install torch --index-url https://download.pytorch.org/whl/cu118
 

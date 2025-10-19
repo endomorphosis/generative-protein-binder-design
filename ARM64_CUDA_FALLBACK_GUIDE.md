@@ -269,18 +269,48 @@ print(f"\nRun: {script_path}")
 
 #### Build Steps
 
+**Option A: Automated Build with GitHub Actions (Recommended)**
+
+1. **Install GitHub CLI**:
+```bash
+sudo apt install gh  # Ubuntu/Debian
+brew install gh      # macOS
+```
+
+2. **Trigger build workflow**:
+```bash
+./scripts/trigger_pytorch_build.sh
+```
+
+Or manually:
+```bash
+gh workflow run pytorch-arm64-build.yml \
+  -f cuda_version=11.8 \
+  -f use_cuda=true \
+  -f upload_artifact=true
+```
+
+3. **Monitor progress**:
+```bash
+gh run watch
+```
+
+4. **Download artifacts** when complete (includes wheel and build logs)
+
+**Option B: Local Manual Build**
+
 1. **Install dependencies**:
 ```bash
 sudo apt update
 sudo apt install build-essential cmake git python3-dev
-# Install CUDA Toolkit from NVIDIA
-# Install cuDNN from NVIDIA
+# Install CUDA Toolkit from NVIDIA (optional)
+# Install cuDNN from NVIDIA (optional, not critical for build)
 ```
 
 2. **Generate and run build script**:
 ```bash
 python -m arm64_cuda_fallback pytorch-build --generate-script
-~/pytorch_build/pytorch_arm64_build.sh
+bash ~/pytorch_build/pytorch_arm64_build.sh
 ```
 
 3. **Wait for build** (1-3 hours depending on system)
