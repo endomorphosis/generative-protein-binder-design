@@ -25,10 +25,26 @@ The docker compose setup for this NIM Agent Blueprint requires the following spe
 
 - [Deploy with Docker Compose](deploy)
 - [Deploy with Helm](protein-design-chart)
+- [Deploy with MCP Server and Dashboard](DOCKER_MCP_README.md) ⭐ **New!**
 - [Source code](src)
 
 ## Quick Start
-Deploy the blueprint using [Docker Compose](deploy) or [Helm](protein-design-chart)
+
+### Option 1: Full Stack with MCP Server & Dashboard (Recommended)
+Deploy the complete stack including MCP server, web dashboard, and Jupyter:
+```bash
+export NGC_CLI_API_KEY=<your-key>
+export HOST_NIM_CACHE=~/.cache/nim
+docker compose -f docker-compose-full.yaml up
+```
+
+Access the services:
+- **MCP Dashboard**: http://localhost:3000 (Web UI for job submission and monitoring)
+- **Jupyter Notebook**: http://localhost:8888 (Interactive notebooks)
+- **MCP Server API**: http://localhost:8000/docs (API documentation)
+
+### Option 2: NIMs Only
+Deploy just the NIM services using [Docker Compose](deploy) or [Helm](protein-design-chart):
 ```bash
 cd ./src
 jupyter notebook
