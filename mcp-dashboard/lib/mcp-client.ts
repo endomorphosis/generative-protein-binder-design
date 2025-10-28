@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from 'axios'
 import { Job, ServiceStatus, ProteinSequenceInput } from './types'
 
-const MCP_SERVER_URL = process.env.NEXT_PUBLIC_MCP_SERVER_URL || 'http://localhost:8000'
+const MCP_SERVER_URL = process.env.NEXT_PUBLIC_MCP_SERVER_URL || 'http://localhost:8001'
 
 class MCPClient {
   private client: AxiosInstance
