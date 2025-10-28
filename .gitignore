@@ -109,5 +109,18 @@ out/
 # Docker
 .dockerignore
 
-# Test outputs
+# Test outputs  
 *.log
+
+# CI/CD artifacts
+.github/runners/
+actions-runner/
+runner-cache/
+test-env/
+native-test-venv/
+docker-compose.*.yml
+!docker-compose.yml
+
+# Container artifacts
+*.tar
+docker-build-*/

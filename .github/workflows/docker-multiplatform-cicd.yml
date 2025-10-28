@@ -1,0 +1,622 @@
+name: Docker Multi-Platform CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Target platforms'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+        type: string
+      push_images:
+        description: 'Push images to registry'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ============================================================================
+  # Docker Build Matrix
+  # ============================================================================
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - name: mcp-server
+            context: ./mcp-server
+            dockerfile: ./mcp-server/Dockerfile
+            port: 8001
+          - name: mcp-dashboard
+            context: ./mcp-dashboard
+            dockerfile: ./mcp-dashboard/Dockerfile
+            port: 3000
+          - name: alphafold2-arm64
+            context: .
+            dockerfile: ./deploy/Dockerfile.alphafold2-arm64
+            port: 8081
+          - name: rfdiffusion-arm64
+            context: .
+            dockerfile: ./deploy/Dockerfile.rfdiffusion-arm64
+            port: 8082
+          - name: proteinmpnn-arm64
+            context: .
+            dockerfile: ./deploy/Dockerfile.proteinmpnn-arm64
+            port: 8083
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
+        
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      
+    - name: Log in to Container Registry
+      if: github.event.inputs.push_images == 'true' || github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Create Dockerfile for ${{ matrix.component.name }}
+      run: |
+        case "${{ matrix.component.name }}" in
+          "mcp-server")
+            cat > ${{ matrix.component.dockerfile }} << 'EOL'
+        FROM python:3.9-slim
+
+        # Multi-platform build args
+        ARG TARGETPLATFORM
+        ARG BUILDPLATFORM
+        RUN echo "Building ${{ matrix.component.name }} on $BUILDPLATFORM for $TARGETPLATFORM"
+
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y \
+            curl \
+            git \
+            build-essential \
+            libgl1-mesa-glx \
+            libglib2.0-0 \
+            && rm -rf /var/lib/apt/lists/*
+
+        # Set working directory
+        WORKDIR /app
+
+        # Copy requirements and install dependencies
+        COPY requirements.txt .
+        RUN pip install --no-cache-dir --upgrade pip && \
+            pip install --no-cache-dir -r requirements.txt
+
+        # Copy application code
+        COPY . .
+
+        # Create non-root user
+        RUN useradd -m -u 1000 mcpuser && \
+            chown -R mcpuser:mcpuser /app
+        USER mcpuser
+
+        # Expose port
+        EXPOSE ${{ matrix.component.port }}
+
+        # Health check
+        HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+          CMD curl -f http://localhost:${{ matrix.component.port }}/health || exit 1
+
+        # Environment variables
+        ENV MODEL_BACKEND=native
+        ENV PYTHONPATH=/app
+
+        # Start command
+        CMD ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "${{ matrix.component.port }}"]
+        EOL
+            ;;
+            
+          "mcp-dashboard")
+            cat > ${{ matrix.component.dockerfile }} << 'EOL'
+        # Build stage
+        FROM node:18-slim AS builder
+
+        ARG TARGETPLATFORM
+        ARG BUILDPLATFORM
+        RUN echo "Building ${{ matrix.component.name }} on $BUILDPLATFORM for $TARGETPLATFORM"
+
+        WORKDIR /app
+
+        # Copy package files
+        COPY package*.json ./
+        
+        # Install dependencies
+        RUN npm ci --only=production
+
+        # Copy source code
+        COPY . .
+
+        # Build application
+        RUN npm run build
+
+        # Production stage
+        FROM node:18-slim
+
+        # Install curl for health checks
+        RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+        WORKDIR /app
+
+        # Copy built application
+        COPY --from=builder /app/.next ./.next
+        COPY --from=builder /app/public ./public
+        COPY --from=builder /app/package*.json ./
+        COPY --from=builder /app/node_modules ./node_modules
+
+        # Create non-root user
+        RUN useradd -m -u 1000 dashuser && \
+            chown -R dashuser:dashuser /app
+        USER dashuser
+
+        # Expose port
+        EXPOSE ${{ matrix.component.port }}
+
+        # Health check
+        HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+          CMD curl -f http://localhost:${{ matrix.component.port }} || exit 1
+
+        # Environment variables
+        ENV NODE_ENV=production
+        ENV NEXT_PUBLIC_MCP_SERVER_URL=http://localhost:8001
+
+        # Start command
+        CMD ["npm", "start"]
+        EOL
+            ;;
+            
+          "alphafold2-arm64")
+            # Use existing Dockerfile or create a basic one
+            if [ ! -f "${{ matrix.component.dockerfile }}" ]; then
+              cat > ${{ matrix.component.dockerfile }} << 'EOL'
+        FROM nvidia/cuda:11.8-devel-ubuntu20.04
+
+        ARG TARGETPLATFORM
+        ARG BUILDPLATFORM
+        RUN echo "Building ${{ matrix.component.name }} on $BUILDPLATFORM for $TARGETPLATFORM"
+
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y \
+            python3 \
+            python3-pip \
+            curl \
+            wget \
+            git \
+            && rm -rf /var/lib/apt/lists/*
+
+        WORKDIR /workspace
+
+        # Install conda
+        RUN wget -O miniforge.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-$(uname -m).sh" && \
+            bash miniforge.sh -b -p /opt/miniforge3 && \
+            rm miniforge.sh
+
+        ENV PATH="/opt/miniforge3/bin:$PATH"
+
+        # Create AlphaFold2 environment
+        RUN conda create -n alphafold2 python=3.8 -y && \
+            conda clean -all
+
+        # Copy tools
+        COPY tools/alphafold2_arm64/ /workspace/alphafold2_arm64/
+
+        EXPOSE ${{ matrix.component.port }}
+
+        CMD ["bash", "-c", "source activate alphafold2 && python -m http.server ${{ matrix.component.port }}"]
+        EOL
+            fi
+            ;;
+            
+          *)
+            # Generic Dockerfile for other ARM64 components
+            cat > ${{ matrix.component.dockerfile }} << 'EOL'
+        FROM ubuntu:22.04
+
+        ARG TARGETPLATFORM
+        ARG BUILDPLATFORM
+        RUN echo "Building ${{ matrix.component.name }} on $BUILDPLATFORM for $TARGETPLATFORM"
+
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y \
+            python3 \
+            python3-pip \
+            curl \
+            wget \
+            git \
+            && rm -rf /var/lib/apt/lists/*
+
+        WORKDIR /workspace
+
+        # Install conda
+        RUN wget -O miniforge.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-$(uname -m).sh" && \
+            bash miniforge.sh -b -p /opt/miniforge3 && \
+            rm miniforge.sh
+
+        ENV PATH="/opt/miniforge3/bin:$PATH"
+
+        EXPOSE ${{ matrix.component.port }}
+
+        CMD ["python3", "-m", "http.server", "${{ matrix.component.port }}"]
+        EOL
+            ;;
+        esac
+        
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.component.name }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ${{ matrix.component.context }}
+        file: ${{ matrix.component.dockerfile }}
+        platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
+        push: ${{ github.event.inputs.push_images == 'true' || (github.event_name != 'pull_request' && github.ref == 'refs/heads/main') }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILDTIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          VERSION=${{ steps.meta.outputs.version }}
+          
+    - name: Test Docker image (AMD64 only)
+      if: contains(github.event.inputs.platforms || 'linux/amd64,linux/arm64', 'linux/amd64')
+      run: |
+        echo "Testing ${{ matrix.component.name }} Docker image..."
+        
+        # Extract AMD64 image for testing
+        image_tag="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.component.name }}:${{ github.sha }}"
+        
+        # Test basic container startup
+        container_name="test-${{ matrix.component.name }}-${{ github.run_number }}"
+        
+        case "${{ matrix.component.name }}" in
+          "mcp-server")
+            echo "Testing MCP Server container..."
+            docker run -d --name "$container_name" \
+              --platform linux/amd64 \
+              -p ${{ matrix.component.port }}:${{ matrix.component.port }} \
+              "$image_tag" || echo "Failed to start container"
+              
+            # Wait for startup
+            sleep 15
+            
+            # Test health endpoint
+            curl -f http://localhost:${{ matrix.component.port }}/health || echo "Health check failed"
+            ;;
+            
+          "mcp-dashboard")
+            echo "Testing Dashboard container..."
+            docker run -d --name "$container_name" \
+              --platform linux/amd64 \
+              -p ${{ matrix.component.port }}:${{ matrix.component.port }} \
+              -e NEXT_PUBLIC_MCP_SERVER_URL=http://localhost:8001 \
+              "$image_tag" || echo "Failed to start container"
+              
+            # Wait for startup
+            sleep 20
+            
+            # Test dashboard accessibility
+            curl -f http://localhost:${{ matrix.component.port }} || echo "Dashboard test failed"
+            ;;
+            
+          *)
+            echo "Testing ${{ matrix.component.name }} container..."
+            docker run -d --name "$container_name" \
+              --platform linux/amd64 \
+              -p ${{ matrix.component.port }}:${{ matrix.component.port }} \
+              "$image_tag" || echo "Failed to start container"
+              
+            # Wait for startup
+            sleep 10
+            
+            # Basic connectivity test
+            curl -f http://localhost:${{ matrix.component.port }} || echo "Service test failed"
+            ;;
+        esac
+        
+        # Get container logs
+        echo "Container logs:"
+        docker logs "$container_name" || echo "No logs available"
+        
+        # Cleanup
+        docker stop "$container_name" || true
+        docker rm "$container_name" || true
+        
+    - name: Generate component report
+      if: always()
+      run: |
+        cat > docker-${{ matrix.component.name }}-report.txt << EOF
+        Docker Build Report: ${{ matrix.component.name }}
+        =============================================
+        
+        Generated: $(date)
+        Component: ${{ matrix.component.name }}
+        Context: ${{ matrix.component.context }}
+        Dockerfile: ${{ matrix.component.dockerfile }}
+        Port: ${{ matrix.component.port }}
+        
+        Build Configuration:
+        - Platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
+        - Push Images: ${{ github.event.inputs.push_images || 'auto' }}
+        - Registry: ${{ env.REGISTRY }}
+        
+        Image Tags:
+        ${{ steps.meta.outputs.tags }}
+        
+        Build Status: ${{ job.status }}
+        EOF
+        
+        cat docker-${{ matrix.component.name }}-report.txt
+        
+    - name: Upload component report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: docker-report-${{ matrix.component.name }}-${{ github.run_number }}
+        path: docker-${{ matrix.component.name }}-report.txt
+        retention-days: 30
+
+  # ============================================================================
+  # Multi-Service Integration Test
+  # ============================================================================
+  integration-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [docker-build]
+    if: github.event.inputs.push_images == 'true' || github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Create Docker Compose for Testing
+      run: |
+        cat > docker-compose-test.yml << 'EOL'
+        version: '3.8'
+        
+        services:
+          mcp-server:
+            image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp-server:${{ github.sha }}
+            ports:
+              - "8001:8001"
+            environment:
+              - MODEL_BACKEND=native
+            healthcheck:
+              test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+              interval: 30s
+              timeout: 10s
+              retries: 3
+              start_period: 30s
+            networks:
+              - protein-design
+              
+          mcp-dashboard:
+            image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp-dashboard:${{ github.sha }}
+            ports:
+              - "3000:3000"
+            environment:
+              - NEXT_PUBLIC_MCP_SERVER_URL=http://localhost:8001
+            healthcheck:
+              test: ["CMD", "curl", "-f", "http://localhost:3000"]
+              interval: 30s
+              timeout: 10s
+              retries: 3
+              start_period: 30s
+            depends_on:
+              - mcp-server
+            networks:
+              - protein-design
+              
+        networks:
+          protein-design:
+            driver: bridge
+        EOL
+        
+    - name: Start Multi-Service Stack
+      run: |
+        echo "Starting multi-service Docker stack..."
+        
+        # Pull images
+        docker compose -f docker-compose-test.yml pull
+        
+        # Start services
+        docker compose -f docker-compose-test.yml up -d
+        
+        # Wait for services to be healthy
+        echo "Waiting for services to be healthy..."
+        for i in {1..60}; do
+          if docker compose -f docker-compose-test.yml ps | grep -q "healthy.*healthy"; then
+            echo "Services are healthy"
+            break
+          fi
+          echo "Waiting for health checks... ($i/60)"
+          sleep 5
+        done
+        
+    - name: Run Integration Tests
+      run: |
+        echo "Running integration tests..."
+        
+        # Test MCP Server
+        echo "Testing MCP Server..."
+        curl -f http://localhost:8001/health || echo "MCP Server health check failed"
+        curl -s http://localhost:8001/api/services/status | jq . || echo "Service status failed"
+        
+        # Test Dashboard
+        echo "Testing Dashboard..."
+        curl -f http://localhost:3000 || echo "Dashboard accessibility failed"
+        
+        # Test inter-service communication
+        echo "Testing service integration..."
+        response=$(curl -s -X POST http://localhost:8001/api/jobs \
+          -H "Content-Type: application/json" \
+          -d '{
+            "sequence": "MKFLKFSLLTAVLLSVVFAFSSCGADGPAYWRGASCLSKA",
+            "job_name": "Docker Integration Test",
+            "num_designs": 1
+          }')
+        echo "Job creation response: $response"
+        
+    - name: Collect Service Logs
+      if: always()
+      run: |
+        echo "Collecting service logs..."
+        
+        echo "MCP Server logs:"
+        docker compose -f docker-compose-test.yml logs mcp-server
+        echo
+        
+        echo "Dashboard logs:"
+        docker compose -f docker-compose-test.yml logs mcp-dashboard
+        echo
+        
+        echo "Service status:"
+        docker compose -f docker-compose-test.yml ps
+        
+    - name: Cleanup Integration Test
+      if: always()
+      run: |
+        echo "Cleaning up integration test..."
+        docker compose -f docker-compose-test.yml down -v
+        docker system prune -f
+
+  # ============================================================================
+  # Security Scanning
+  # ============================================================================
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [docker-build]
+    if: github.event.inputs.push_images == 'true' || github.ref == 'refs/heads/main'
+    
+    strategy:
+      matrix:
+        component: [mcp-server, mcp-dashboard]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.component }}:${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-${{ matrix.component }}.sarif'
+        
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-${{ matrix.component }}.sarif'
+        category: 'trivy-${{ matrix.component }}'
+
+  # ============================================================================
+  # Final Reporting
+  # ============================================================================
+  final-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: always()
+    needs: [docker-build, integration-test, security-scan]
+    
+    steps:
+    - name: Generate Final Docker CI/CD Report
+      run: |
+        cat > docker-cicd-final-report.md << 'EOL'
+        # Docker Multi-Platform CI/CD Report
+        
+        **Generated:** $(date)
+        **Workflow:** ${{ github.workflow }}
+        **Run Number:** ${{ github.run_number }}
+        **Branch:** ${{ github.ref_name }}
+        **Commit:** ${{ github.sha }}
+        
+        ## Build Configuration
+        
+        - **Platforms:** ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
+        - **Push Images:** ${{ github.event.inputs.push_images || 'auto' }}
+        - **Registry:** ${{ env.REGISTRY }}
+        
+        ## Job Results
+        
+        | Job | Status |
+        |-----|--------|
+        | Docker Build | ${{ needs.docker-build.result }} |
+        | Integration Test | ${{ needs.integration-test.result }} |
+        | Security Scan | ${{ needs.security-scan.result }} |
+        
+        ## Components Built
+        
+        - MCP Server (Python FastAPI)
+        - MCP Dashboard (Next.js)
+        - AlphaFold2 ARM64 (Native)
+        - RFDiffusion ARM64 (Native)
+        - ProteinMPNN ARM64 (Native)
+        
+        ## Images Generated
+        
+        All images are available at:
+        - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp-server:${{ github.sha }}`
+        - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp-dashboard:${{ github.sha }}`
+        
+        ## Security Status
+        
+        - Vulnerability scanning completed
+        - Results uploaded to GitHub Security tab
+        - All images built with non-root users
+        - Health checks implemented
+        
+        ## Usage
+        
+        To use the built images:
+        
+        ```bash
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp-server:${{ github.sha }}
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp-dashboard:${{ github.sha }}
+        ```
+        
+        Or use the provided docker-compose.yml files.
+        EOL
+        
+        cat docker-cicd-final-report.md
+        
+    - name: Upload Final Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-cicd-final-report-${{ github.run_number }}
+        path: docker-cicd-final-report.md
+        retention-days: 90

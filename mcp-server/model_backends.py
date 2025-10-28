@@ -151,13 +151,15 @@ class NativeBackend(ModelBackend):
     def _check_alphafold(self) -> bool:
         """Check if AlphaFold2 is available"""
         try:
-            # Check for AlphaFold installation
-            import sys
-            alphafold_path = os.getenv("ALPHAFOLD_PATH", "/opt/alphafold")
-            if os.path.exists(alphafold_path):
-                if alphafold_path not in sys.path:
-                    sys.path.append(alphafold_path)
-                return True
+            # Check for AlphaFold runner script and conda environment
+            runner_path = "/home/barberb/generative-protein-binder-design/tools/alphafold2_arm64/alphafold_runner.py"
+            if os.path.exists(runner_path):
+                # Check if conda environment exists
+                import subprocess
+                result = subprocess.run(['conda', 'env', 'list'], capture_output=True, text=True)
+                if 'alphafold2_arm64' in result.stdout:
+                    logger.info("AlphaFold2 ARM64 environment found")
+                    return True
         except Exception as e:
             logger.debug(f"AlphaFold not available: {e}")
         return False
@@ -165,9 +167,15 @@ class NativeBackend(ModelBackend):
     def _check_rfdiffusion(self) -> bool:
         """Check if RFDiffusion is available"""
         try:
-            rfdiffusion_path = os.getenv("RFDIFFUSION_PATH", "/opt/rfdiffusion")
-            if os.path.exists(rfdiffusion_path):
-                return True
+            # Check for RFDiffusion runner script and conda environment
+            runner_path = "/home/barberb/generative-protein-binder-design/tools/rfdiffusion_arm64/rfdiffusion_runner.py"
+            if os.path.exists(runner_path):
+                # Check if conda environment exists
+                import subprocess
+                result = subprocess.run(['conda', 'env', 'list'], capture_output=True, text=True)
+                if 'rfdiffusion_arm64' in result.stdout:
+                    logger.info("RFDiffusion ARM64 environment found")
+                    return True
         except Exception as e:
             logger.debug(f"RFDiffusion not available: {e}")
         return False
@@ -175,9 +183,15 @@ class NativeBackend(ModelBackend):
     def _check_proteinmpnn(self) -> bool:
         """Check if ProteinMPNN is available"""
         try:
-            proteinmpnn_path = os.getenv("PROTEINMPNN_PATH", "/opt/proteinmpnn")
-            if os.path.exists(proteinmpnn_path):
-                return True
+            # Check for ProteinMPNN runner script and conda environment
+            runner_path = "/home/barberb/generative-protein-binder-design/tools/proteinmpnn_arm64/proteinmpnn_runner.py"
+            if os.path.exists(runner_path):
+                # Check if conda environment exists
+                import subprocess
+                result = subprocess.run(['conda', 'env', 'list'], capture_output=True, text=True)
+                if 'proteinmpnn_arm64' in result.stdout:
+                    logger.info("ProteinMPNN ARM64 environment found")
+                    return True
         except Exception as e:
             logger.debug(f"ProteinMPNN not available: {e}")
         return False
@@ -269,23 +283,27 @@ class NativeBackend(ModelBackend):
         return {
             "alphafold": {
                 "status": "ready" if self.available_models.get("alphafold") else "not_available",
-                "backend": "Native",
-                "path": os.getenv("ALPHAFOLD_PATH", "/opt/alphafold")
+                "backend": "Native ARM64",
+                "conda_env": "alphafold2_arm64",
+                "path": "/home/barberb/generative-protein-binder-design/tools/alphafold2_arm64/"
             },
             "rfdiffusion": {
-                "status": "ready" if self.available_models.get("rfdiffusion") else "not_available",
-                "backend": "Native",
-                "path": os.getenv("RFDIFFUSION_PATH", "/opt/rfdiffusion")
+                "status": "ready" if self.available_models.get("rfdiffusion") else "not_available", 
+                "backend": "Native ARM64",
+                "conda_env": "rfdiffusion_arm64",
+                "path": "/home/barberb/generative-protein-binder-design/tools/rfdiffusion_arm64/"
             },
             "proteinmpnn": {
                 "status": "ready" if self.available_models.get("proteinmpnn") else "not_available",
-                "backend": "Native",
-                "path": os.getenv("PROTEINMPNN_PATH", "/opt/proteinmpnn")
+                "backend": "Native ARM64", 
+                "conda_env": "proteinmpnn_arm64",
+                "path": "/home/barberb/generative-protein-binder-design/tools/proteinmpnn_arm64/"
             },
             "alphafold_multimer": {
                 "status": "ready" if self.available_models.get("alphafold") else "not_available",
-                "backend": "Native",
-                "path": os.getenv("ALPHAFOLD_PATH", "/opt/alphafold")
+                "backend": "Native ARM64",
+                "conda_env": "alphafold2_arm64",
+                "path": "/home/barberb/generative-protein-binder-design/tools/alphafold2_arm64/"
             }
         }
     
@@ -305,16 +323,11 @@ class NativeBackend(ModelBackend):
         output_dir = tempfile.mkdtemp()
         
         try:
-            # Run AlphaFold2 in conda environment
+            # Run AlphaFold2 using the runner script
             cmd = [
                 "conda", "run", "-n", "alphafold2_arm64",
-                "python", "-c", f"""
-import sys
-sys.path.append('/home/barberb/generative-protein-binder-design/tools/alphafold2_arm64')
-from alphafold_runner import predict_structure
-result = predict_structure('{fasta_file}', '{output_dir}')
-print(result)
-"""
+                "python", "/home/barberb/generative-protein-binder-design/tools/alphafold2_arm64/alphafold_runner.py",
+                fasta_file, output_dir
             ]
             
             process = await asyncio.create_subprocess_exec(
@@ -357,16 +370,11 @@ print(result)
         output_dir = tempfile.mkdtemp()
         
         try:
-            # Run RFDiffusion in conda environment
+            # Run RFDiffusion using the runner script
             cmd = [
                 "conda", "run", "-n", "rfdiffusion_arm64",
-                "python", "-c", f"""
-import sys
-sys.path.append('/home/barberb/generative-protein-binder-design/tools/rfdiffusion_arm64')
-from rfdiffusion_runner import design_binder
-result = design_binder('{pdb_file}', '{output_dir}', design_id={design_id})
-print(result)
-"""
+                "python", "/home/barberb/generative-protein-binder-design/tools/rfdiffusion_arm64/rfdiffusion_runner.py",
+                pdb_file, output_dir, str(design_id)
             ]
             
             process = await asyncio.create_subprocess_exec(
@@ -406,16 +414,11 @@ print(result)
             pdb_file = f.name
         
         try:
-            # Run ProteinMPNN in conda environment
+            # Run ProteinMPNN using the runner script
             cmd = [
                 "conda", "run", "-n", "proteinmpnn_arm64",
-                "python", "-c", f"""
-import sys
-sys.path.append('/home/barberb/generative-protein-binder-design/tools/proteinmpnn_arm64')
-from proteinmpnn_runner import generate_sequence
-result = generate_sequence('{pdb_file}')
-print(result)
-"""
+                "python", "/home/barberb/generative-protein-binder-design/tools/proteinmpnn_arm64/proteinmpnn_runner.py",
+                pdb_file
             ]
             
             process = await asyncio.create_subprocess_exec(

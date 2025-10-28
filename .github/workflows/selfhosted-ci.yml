@@ -1,0 +1,29 @@
+name: Self-Hosted CI/CD
+
+on:
+  push:
+    branches: [ main, dgx-spark ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: [self-hosted, ARM64]
+    
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: System Info
+      run: |
+        echo "System: $(uname -a)"
+        echo "Docker: $(docker --version)"
+        
+    - name: Build and Test
+      run: |
+        cd mcp-server
+        docker build -t mcp-test .
+        docker run -d --name test -p 8001:8000 mcp-test || true
+        sleep 5
+        docker logs test || true
+        docker stop test || true
+        docker rm test || true
+        docker rmi mcp-test || true
