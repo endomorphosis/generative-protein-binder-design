@@ -14,7 +14,8 @@ import json
 import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
@@ -48,6 +49,18 @@ app.add_middleware(
 
 # In-memory job storage (in production, use a database)
 jobs_db: Dict[str, Dict[str, Any]] = {}
+
+# Simple in-memory SSE broadcaster
+subscribers: List[asyncio.Queue] = []
+
+async def broadcast_event(event: Dict[str, Any]):
+    data = event
+    for q in list(subscribers):
+        try:
+            await q.put(data)
+        except Exception:
+            # ignore subscriber errors
+            pass
 
 # Pydantic models for request/response
 class ProteinSequenceInput(BaseModel):
@@ -130,6 +143,132 @@ async def list_tools() -> Dict[str, List[ToolInfo]]:
         ]
     }
 
+
+def _jsonrpc_error(_id: Any, code: int, message: str) -> Dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": _id, "error": {"code": code, "message": message}}
+
+
+def _jsonrpc_result(_id: Any, result: Any) -> Dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": _id, "result": result}
+
+
+def _mcp_initialize_result() -> Dict[str, Any]:
+    # Keep in sync with tools/mcp_stdio_adapter.py
+    return {
+        "protocolVersion": "2024-11-05",
+        "capabilities": {
+            "tools": {},
+            "resources": {},
+            "logging": {},
+        },
+        "serverInfo": {"name": "protein-binder-mcp-server", "version": "1.0.0"},
+    }
+
+
+@app.post("/mcp")
+async def mcp_jsonrpc(request: Request) -> Dict[str, Any]:
+    """JSON-RPC 2.0 endpoint for MCP clients that use HTTP transport.
+
+    This is in addition to the REST-style MCP endpoints under /mcp/v1/*.
+    """
+    try:
+        message = await request.json()
+    except Exception:
+        return _jsonrpc_error(None, -32700, "Parse error")
+
+    if not isinstance(message, dict):
+        return _jsonrpc_error(None, -32600, "Invalid Request")
+
+    msg_id = message.get("id")
+    method = message.get("method")
+    params = message.get("params") or {}
+
+    try:
+        if method == "initialize":
+            return _jsonrpc_result(msg_id, _mcp_initialize_result())
+
+        if method == "tools/list":
+            tools = (await list_tools()).get("tools", [])
+            return _jsonrpc_result(msg_id, {"tools": tools})
+
+        if method == "tools/call":
+            name = params.get("name")
+            arguments = params.get("arguments") or {}
+
+            if name == "design_protein_binder":
+                input_data = ProteinSequenceInput(**arguments)
+                job_id = f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(jobs_db)}"
+                job = {
+                    "job_id": job_id,
+                    "status": "created",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat(),
+                    "job_name": input_data.job_name,
+                    "input": {"sequence": input_data.sequence, "num_designs": input_data.num_designs},
+                    "progress": {
+                        "alphafold": "pending",
+                        "rfdiffusion": "pending",
+                        "proteinmpnn": "pending",
+                        "alphafold_multimer": "pending",
+                    },
+                    "results": None,
+                    "error": None,
+                }
+                jobs_db[job_id] = job
+                try:
+                    asyncio.create_task(broadcast_event({"type": "job.created", "job": job}))
+                except Exception:
+                    pass
+                asyncio.create_task(process_job(job_id))
+                return _jsonrpc_result(
+                    msg_id,
+                    {
+                        "content": [{"type": "text", "text": json.dumps(JobStatus(**job).model_dump(), indent=2)}],
+                        "isError": False,
+                    },
+                )
+
+            if name == "get_job_status":
+                job_id = arguments.get("job_id")
+                if not job_id or job_id not in jobs_db:
+                    return _jsonrpc_error(msg_id, -32004, "Job not found")
+                job = JobStatus(**jobs_db[job_id]).model_dump()
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(job, indent=2)}], "isError": False},
+                )
+
+            if name == "list_jobs":
+                jobs = [JobStatus(**j).model_dump() for j in jobs_db.values()]
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(jobs, indent=2)}], "isError": False},
+                )
+
+            return _jsonrpc_error(msg_id, -32601, f"Unknown tool: {name}")
+
+        if method == "resources/list":
+            resources = (await list_resources()).get("resources", [])
+            return _jsonrpc_result(msg_id, {"resources": resources})
+
+        if method == "resources/read":
+            uri = params.get("uri") or params.get("path")
+            if not uri:
+                return _jsonrpc_error(msg_id, -32602, "Missing resource uri")
+            if uri.startswith("job://"):
+                job_id = uri.replace("job://", "")
+            else:
+                job_id = uri
+            contents = (await get_resource(job_id)).get("contents", [])
+            return _jsonrpc_result(msg_id, {"contents": contents})
+
+        if method in {"shutdown", "exit"}:
+            return _jsonrpc_result(msg_id, None)
+
+        return _jsonrpc_error(msg_id, -32601, f"Method not found: {method}")
+    except Exception as exc:
+        return _jsonrpc_error(msg_id, -32603, str(exc))
+
 @app.get("/mcp/v1/resources")
 async def list_resources() -> Dict[str, List[ResourceInfo]]:
     """List available MCP resources"""
@@ -195,6 +334,11 @@ async def create_job(
     
     jobs_db[job_id] = job
     
+    # notify subscribers about new job
+    try:
+        asyncio.create_task(broadcast_event({"type": "job.created", "job": job}))
+    except Exception:
+        pass
     # Start job processing in background
     background_tasks.add_task(process_job, job_id)
     
@@ -231,6 +375,38 @@ async def check_services() -> Dict[str, Any]:
     """Check status of all backend services"""
     return await model_backend.check_health()
 
+
+@app.get('/sse')
+async def sse_endpoint(request: Request):
+    async def event_generator():
+        q: asyncio.Queue = asyncio.Queue()
+        subscribers.append(q)
+        try:
+            # immediate handshake
+            yield "data: ready\n\n"
+            while True:
+                try:
+                    data = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield f"data: {json.dumps(data)}\n\n"
+                except asyncio.TimeoutError:
+                    # heartbeat to keep connection alive
+                    yield "data: ping\n\n"
+                except asyncio.CancelledError:
+                    break
+        finally:
+            try:
+                subscribers.remove(q)
+            except ValueError:
+                pass
+
+    return StreamingResponse(event_generator(), media_type='text/event-stream')
+
+
+@app.get('/mcp/sse')
+async def mcp_sse_endpoint(request: Request):
+    """Alias of /sse for clients expecting an MCP-namespaced SSE endpoint."""
+    return await sse_endpoint(request)
+
 # Background job processing
 async def process_job(job_id: str):
     """Process a protein binder design job using configured backend"""
@@ -238,6 +414,10 @@ async def process_job(job_id: str):
         job = jobs_db[job_id]
         job["status"] = "running"
         job["updated_at"] = datetime.now().isoformat()
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+        except Exception:
+            pass
         
         sequence = job["input"]["sequence"]
         num_designs = job["input"]["num_designs"]
@@ -255,6 +435,10 @@ async def process_job(job_id: str):
             job["progress"]["alphafold"] = f"error: {str(e)}"
             # For demo purposes, continue with mock data
             alphafold_result = {"pdb": "mock_structure"}
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+        except Exception:
+            pass
         
         # Step 2: RFDiffusion - generate binder backbones
         logger.info(f"Job {job_id}: Running RFDiffusion")
@@ -271,6 +455,10 @@ async def process_job(job_id: str):
             logger.error(f"RFDiffusion error: {e}")
             job["progress"]["rfdiffusion"] = f"error: {str(e)}"
             rfdiffusion_result = {"designs": [{"pdb": f"mock_design_{i}"} for i in range(num_designs)]}
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+        except Exception:
+            pass
         
         # Step 3: ProteinMPNN - generate sequences for backbones
         logger.info(f"Job {job_id}: Running ProteinMPNN")
@@ -287,6 +475,10 @@ async def process_job(job_id: str):
             logger.error(f"ProteinMPNN error: {e}")
             job["progress"]["proteinmpnn"] = f"error: {str(e)}"
             mpnn_results = [{"sequence": f"MOCK_SEQ_{i}"} for i in range(num_designs)]
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+        except Exception:
+            pass
         
         # Step 4: AlphaFold2-Multimer - predict complex structures
         logger.info(f"Job {job_id}: Running AlphaFold2-Multimer")
@@ -306,6 +498,10 @@ async def process_job(job_id: str):
             logger.error(f"AlphaFold2-Multimer error: {e}")
             job["progress"]["alphafold_multimer"] = f"error: {str(e)}"
             multimer_results = [{"pdb": f"mock_complex_{i}"} for i in range(num_designs)]
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+        except Exception:
+            pass
         
         # Compile results
         job["results"] = {
@@ -324,7 +520,10 @@ async def process_job(job_id: str):
         job["status"] = "completed"
         job["updated_at"] = datetime.now().isoformat()
         logger.info(f"Job {job_id}: Completed successfully")
-        
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.completed", "job": job}))
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}")
         job["status"] = "failed"

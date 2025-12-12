@@ -20,6 +20,32 @@ export default function Home() {
     setSelectedJob(job)
   }
 
+  useEffect(() => {
+    // Connect to MCP server SSE to receive job updates and trigger refresh
+    let es: EventSource | null = null
+    try {
+      es = new EventSource('http://localhost:8010/sse')
+      es.onmessage = (e) => {
+        try {
+          // increment refresh trigger when any event arrives
+          setRefreshTrigger((prev) => prev + 1)
+          console.debug('MCP SSE event:', e.data)
+        } catch (err) {
+          // ignore
+        }
+      }
+      es.onerror = (err) => {
+        console.warn('SSE error', err)
+      }
+    } catch (e) {
+      console.warn('Failed to connect to MCP SSE', e)
+    }
+
+    return () => {
+      if (es) es.close()
+    }
+  }, [])
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <div className="container mx-auto px-4 py-8">
