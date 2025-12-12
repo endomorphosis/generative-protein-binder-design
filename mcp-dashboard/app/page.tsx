@@ -6,6 +6,7 @@ import JobList from '@/components/JobList'
 import ResultsViewer from '@/components/ResultsViewer'
 import ServiceStatus from '@/components/ServiceStatus'
 import JupyterLauncher from '@/components/JupyterLauncher'
+import ToolsPanel from '@/components/ToolsPanel'
 import { Job } from '@/lib/types'
 
 export default function Home() {
@@ -24,7 +25,8 @@ export default function Home() {
     // Connect to MCP server SSE to receive job updates and trigger refresh
     let es: EventSource | null = null
     try {
-      es = new EventSource('http://localhost:8010/sse')
+      // Use dashboard-proxied SSE so environments don't require hardcoded localhost/ports
+      es = new EventSource('/sse')
       es.onmessage = (e) => {
         try {
           // increment refresh trigger when any event arrives
@@ -77,6 +79,13 @@ export default function Home() {
                 New Design Job
               </h2>
               <ProteinSequenceForm onJobCreated={handleJobCreated} />
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
+              <h2 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">
+                MCP Tools
+              </h2>
+              <ToolsPanel />
             </div>
             
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">

@@ -139,6 +139,90 @@ async def list_tools() -> Dict[str, List[ToolInfo]]:
                     "type": "object",
                     "properties": {}
                 }
+            ),
+            ToolInfo(
+                name="delete_job",
+                description="Delete a protein design job",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "job_id": {
+                            "type": "string",
+                            "description": "Job ID to delete"
+                        }
+                    },
+                    "required": ["job_id"]
+                }
+            ),
+            ToolInfo(
+                name="check_services",
+                description="Check status of all backend services (NIM/native/hybrid)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {}
+                }
+            ),
+            ToolInfo(
+                name="predict_structure",
+                description="Predict structure from sequence (AlphaFold2 backend)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "sequence": {
+                            "type": "string",
+                            "description": "Protein amino acid sequence"
+                        }
+                    },
+                    "required": ["sequence"]
+                }
+            ),
+            ToolInfo(
+                name="design_binder_backbone",
+                description="Generate binder backbones from a target PDB (RFDiffusion backend)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "target_pdb": {
+                            "type": "string",
+                            "description": "Target protein PDB content (string)"
+                        },
+                        "num_designs": {
+                            "type": "integer",
+                            "description": "Number of backbones to generate",
+                            "default": 5
+                        }
+                    },
+                    "required": ["target_pdb"]
+                }
+            ),
+            ToolInfo(
+                name="generate_sequence",
+                description="Generate binder sequence from a backbone PDB (ProteinMPNN backend)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "backbone_pdb": {
+                            "type": "string",
+                            "description": "Backbone PDB content (string)"
+                        }
+                    },
+                    "required": ["backbone_pdb"]
+                }
+            ),
+            ToolInfo(
+                name="predict_complex",
+                description="Predict complex structure from sequences (AlphaFold2-Multimer backend)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "sequences": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of chain sequences"
+                        }
+                    },
+                    "required": ["sequences"]
+                }
             )
         ]
     }
@@ -243,6 +327,71 @@ async def mcp_jsonrpc(request: Request) -> Dict[str, Any]:
                 return _jsonrpc_result(
                     msg_id,
                     {"content": [{"type": "text", "text": json.dumps(jobs, indent=2)}], "isError": False},
+                )
+
+            if name == "delete_job":
+                job_id = arguments.get("job_id")
+                if not job_id or job_id not in jobs_db:
+                    return _jsonrpc_error(msg_id, -32004, "Job not found")
+                deleted = jobs_db.pop(job_id)
+                try:
+                    asyncio.create_task(broadcast_event({"type": "job.deleted", "job": deleted}))
+                except Exception:
+                    pass
+                return _jsonrpc_result(
+                    msg_id,
+                    {
+                        "content": [{"type": "text", "text": json.dumps({"deleted": job_id}, indent=2)}],
+                        "isError": False,
+                    },
+                )
+
+            if name == "check_services":
+                status = await model_backend.check_health()
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(status, indent=2)}], "isError": False},
+                )
+
+            if name == "predict_structure":
+                sequence = arguments.get("sequence")
+                if not sequence:
+                    return _jsonrpc_error(msg_id, -32602, "Missing sequence")
+                result = await model_backend.predict_structure(sequence)
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(result, indent=2)}], "isError": False},
+                )
+
+            if name == "design_binder_backbone":
+                target_pdb = arguments.get("target_pdb")
+                if not target_pdb:
+                    return _jsonrpc_error(msg_id, -32602, "Missing target_pdb")
+                num_designs = int(arguments.get("num_designs") or 5)
+                result = await model_backend.design_binder_backbone(target_pdb, num_designs)
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(result, indent=2)}], "isError": False},
+                )
+
+            if name == "generate_sequence":
+                backbone_pdb = arguments.get("backbone_pdb")
+                if not backbone_pdb:
+                    return _jsonrpc_error(msg_id, -32602, "Missing backbone_pdb")
+                result = await model_backend.generate_sequence(backbone_pdb)
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(result, indent=2)}], "isError": False},
+                )
+
+            if name == "predict_complex":
+                sequences = arguments.get("sequences")
+                if not sequences or not isinstance(sequences, list):
+                    return _jsonrpc_error(msg_id, -32602, "Missing sequences")
+                result = await model_backend.predict_complex(sequences)
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(result, indent=2)}], "isError": False},
                 )
 
             return _jsonrpc_error(msg_id, -32601, f"Unknown tool: {name}")

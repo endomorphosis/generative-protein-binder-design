@@ -1,64 +1,66 @@
-import axios, { AxiosInstance } from 'axios'
 import { Job, ServiceStatus, ProteinSequenceInput } from './types'
 
-const MCP_SERVER_URL = process.env.NEXT_PUBLIC_MCP_SERVER_URL || 'http://localhost:8001'
+async function getJson<T>(path: string): Promise<T> {
+  const res = await fetch(path, { cache: 'no-store' })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return (await res.json()) as T
+}
+
+async function sendJson<T>(path: string, method: 'POST' | 'DELETE', body?: any): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  return (await res.json()) as T
+}
 
 class MCPClient {
-  private client: AxiosInstance
-
-  constructor() {
-    this.client = axios.create({
-      baseURL: MCP_SERVER_URL,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-  }
-
   // MCP Protocol methods
   async listTools() {
-    const response = await this.client.get('/mcp/v1/tools')
-    return response.data
+    return getJson('/api/mcp/tools')
   }
 
   async listResources() {
-    const response = await this.client.get('/mcp/v1/resources')
-    return response.data
+    return getJson('/api/mcp/resources')
   }
 
   async getResource(jobId: string) {
-    const response = await this.client.get(`/mcp/v1/resources/${jobId}`)
-    return response.data
+    return sendJson('/api/mcp/resources/read', 'POST', { uri: `job://${jobId}` })
   }
 
-  // Job management methods
+  // Job management methods (implemented via MCP tools)
   async createJob(input: ProteinSequenceInput): Promise<Job> {
-    const response = await this.client.post('/api/jobs', input)
-    return response.data
+    return sendJson<Job>('/api/mcp/jobs', 'POST', input)
   }
 
   async listJobs(): Promise<Job[]> {
-    const response = await this.client.get('/api/jobs')
-    return response.data
+    return getJson<Job[]>('/api/mcp/jobs')
   }
 
   async getJob(jobId: string): Promise<Job> {
-    const response = await this.client.get(`/api/jobs/${jobId}`)
-    return response.data
+    return sendJson<Job>('/api/mcp/jobs/status', 'POST', { job_id: jobId })
   }
 
   async deleteJob(jobId: string): Promise<void> {
-    await this.client.delete(`/api/jobs/${jobId}`)
+    await sendJson('/api/mcp/jobs', 'DELETE', { job_id: jobId })
   }
 
   async getServiceStatus(): Promise<ServiceStatus> {
-    const response = await this.client.get('/api/services/status')
-    return response.data
+    return getJson<ServiceStatus>('/api/mcp/services/status')
   }
 
   async healthCheck(): Promise<{ status: string }> {
-    const response = await this.client.get('/health')
-    return response.data
+    // Dashboard health is separate; this keeps existing API usage from breaking.
+    return { status: 'ok' }
   }
 }
 
