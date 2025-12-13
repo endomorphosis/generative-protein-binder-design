@@ -40,6 +40,10 @@ function schemaDefault(schema?: JsonSchema): any {
   return ''
 }
 
+function safeIdSuffix(input: string) {
+  return input.toLowerCase().replace(/[^a-z0-9_-]+/g, '_')
+}
+
 export default function ToolsPanel() {
   const [tools, setTools] = useState<Tool[]>([])
   const [loading, setLoading] = useState(true)
@@ -104,13 +108,16 @@ export default function ToolsPanel() {
     })
   }
 
-  const callTool = async () => {
+  const callTool = async (override?: { name?: string; args?: Record<string, any> }) => {
     setRunning(true)
     setError(null)
     setResultText('')
 
     try {
-      const bodyArgs = rawMode ? safeJsonParse(rawArgsText) : args
+      const nameToCall = override?.name ?? selectedToolName
+      const argsToCall = override?.args ?? (rawMode ? safeJsonParse(rawArgsText) : args)
+
+      const bodyArgs = argsToCall
       if (rawMode && bodyArgs === null) {
         throw new Error('Arguments JSON is invalid')
       }
@@ -118,7 +125,7 @@ export default function ToolsPanel() {
       const res = await fetch('/api/mcp/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: selectedToolName, arguments: bodyArgs || {} }),
+        body: JSON.stringify({ name: nameToCall, arguments: bodyArgs || {} }),
       })
 
       const payload = await res.json()
@@ -152,8 +159,7 @@ export default function ToolsPanel() {
     setRawMode(false)
     setArgs(arguments_)
     setRawArgsText(JSON.stringify(arguments_, null, 2))
-    await Promise.resolve()
-    await callTool()
+    await callTool({ name: toolName, args: arguments_ })
   }
 
   const statusPill = (status?: string) => {
@@ -319,10 +325,14 @@ export default function ToolsPanel() {
       )}
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        <label
+          htmlFor="mcp-tool-select"
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+        >
           Tool
         </label>
         <select
+          id="mcp-tool-select"
           value={selectedToolName}
           onChange={(e) => setSelectedToolName(e.target.value)}
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
@@ -339,9 +349,12 @@ export default function ToolsPanel() {
       </div>
 
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Arguments</label>
-        <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+        <label htmlFor={rawMode ? 'mcp-raw-args' : undefined} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          Arguments
+        </label>
+        <label htmlFor="mcp-raw-mode" className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
           <input
+            id="mcp-raw-mode"
             type="checkbox"
             checked={rawMode}
             onChange={(e) => setRawMode(e.target.checked)}
@@ -359,14 +372,16 @@ export default function ToolsPanel() {
           {Object.entries(selectedTool?.inputSchema?.properties || {}).map(([key, schema]) => {
             const schemaType = schema?.type || 'string'
             const required = (selectedTool?.inputSchema?.required || []).includes(key)
+            const fieldId = `mcp-arg-${safeIdSuffix(key)}`
 
             if (schemaType === 'integer' || schemaType === 'number') {
               return (
                 <div key={key}>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor={fieldId} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     {key}{required ? ' *' : ''}
                   </label>
                   <input
+                    id={fieldId}
                     type="number"
                     value={args[key] ?? ''}
                     onChange={(e) => handleArgChange(key, e.target.value === '' ? '' : Number(e.target.value))}
@@ -382,10 +397,11 @@ export default function ToolsPanel() {
             if (schemaType === 'array') {
               return (
                 <div key={key}>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor={fieldId} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     {key}{required ? ' *' : ''} (JSON array)
                   </label>
                   <textarea
+                    id={fieldId}
                     rows={3}
                     value={JSON.stringify(args[key] ?? [], null, 2)}
                     onChange={(e) => {
@@ -403,10 +419,11 @@ export default function ToolsPanel() {
 
             return (
               <div key={key}>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor={fieldId} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   {key}{required ? ' *' : ''}
                 </label>
                 <textarea
+                  id={fieldId}
                   rows={schema?.description?.toLowerCase().includes('pdb') ? 6 : 2}
                   value={args[key] ?? ''}
                   onChange={(e) => handleArgChange(key, e.target.value)}
@@ -423,6 +440,7 @@ export default function ToolsPanel() {
 
       {rawMode && (
         <textarea
+          id="mcp-raw-args"
           rows={10}
           value={rawArgsText}
           onChange={(e) => setRawArgsText(e.target.value)}
