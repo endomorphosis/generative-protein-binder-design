@@ -211,6 +211,32 @@ cd deploy
 docker compose up
 ```
 
+### Option 2b: Dashboard Stack with Non-Conflicting Ports
+
+This starts the dashboard + MCP server + all auxiliary model services together.
+Model services are published on `18081-18084` to avoid collisions with other stacks that commonly use `8081-8084`.
+
+```bash
+# From repo root
+export NGC_CLI_API_KEY=<your-key>
+mkdir -p ~/.cache/nim
+chmod -R 777 ~/.cache/nim
+export HOST_NIM_CACHE=~/.cache/nim
+
+docker compose -f deploy/docker-compose-dashboard.yaml up -d
+```
+
+Ports (defaults):
+- Dashboard: `http://localhost:3000`
+- MCP Server: `http://localhost:8010`
+- Model services: `http://localhost:18081-18084`
+
+Override ports if needed:
+
+```bash
+MCP_DASHBOARD_HOST_PORT=3005 MCP_SERVER_HOST_PORT=8015 docker compose -f deploy/docker-compose-dashboard.yaml up -d
+```
+
 Only starts the NIM services for direct API access.
 
 ### Option 3: Development Mode
