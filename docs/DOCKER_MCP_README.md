@@ -71,6 +71,68 @@ docker compose -f ../deploy/docker-compose-full.yaml up
 - **Jupyter Notebook**: http://localhost:8888
 - **NIM Services**: http://localhost:8081-8084
 
+### Backend routing + fallback (NIM → external → embedded)
+
+The MCP server supports a configurable provider/fallback pattern:
+- **nim**: talk to NIM model services (default in the AMD64 stack)
+- **external**: talk to any compatible REST services you run elsewhere
+- **embedded**: last-resort execution inside the MCP server container (currently supports ProteinMPNN when present)
+
+You can change this from the Dashboard via the **Settings** button (top-right). Under the hood the Dashboard updates the MCP server runtime config:
+- `GET /api/config`
+- `PUT /api/config`
+- `POST /api/config/reset`
+
+The Docker compose dashboard stacks mount a named volume and set `MCP_CONFIG_PATH=/config/mcp_config.json` so these settings persist across restarts. Set `MCP_CONFIG_READONLY=1` to disable runtime edits.
+
+For embedded provider downloads, the stacks also mount a persistent `/models` volume, so any downloaded model assets (like ProteinMPNN source/weights) can be reused across restarts.
+
+### Multi-platform (one command)
+
+Use the helper script below to start the correct dashboard stack for your machine:
+
+```bash
+./scripts/run_dashboard_stack.sh up -d --build
+```
+
+What it does:
+- On **AMD64/x86_64**, starts the **NIM** dashboard stack ([deploy/docker-compose-dashboard.yaml](deploy/docker-compose-dashboard.yaml)).
+- On **ARM64/aarch64**, starts the **ARM64-native** dashboard stack ([deploy/docker-compose-dashboard-arm64-native.yaml](deploy/docker-compose-dashboard-arm64-native.yaml)).
+
+You can also force a mode:
+
+```bash
+./scripts/run_dashboard_stack.sh --amd64 up -d
+./scripts/run_dashboard_stack.sh --arm64 up -d --build
+```
+
+To run the AMD64 NIM stack on ARM64 via emulation (qemu/binfmt), use:
+
+```bash
+./scripts/run_dashboard_stack.sh --emulated up -d
+```
+
+### Publish multi-arch core images (MCP server + dashboard)
+
+The model service images differ by architecture (NIM is AMD64-only; ARM64-native model containers are built from source), but the **core** images we own can be published as true multi-arch images:
+
+```bash
+REGISTRY=ghcr.io/hallucinate-llc TAG=latest PUSH=1 ./scripts/build_multiplatform_core_images.sh
+```
+
+This publishes:
+- `ghcr.io/hallucinate-llc/mcp-server:latest`
+- `ghcr.io/hallucinate-llc/mcp-dashboard:latest`
+
+To use published images (instead of local builds) with the dashboard stacks:
+
+```bash
+MCP_SERVER_IMAGE=ghcr.io/hallucinate-llc/mcp-server:latest \
+MCP_DASHBOARD_IMAGE=ghcr.io/hallucinate-llc/mcp-dashboard:latest \
+./scripts/run_dashboard_stack.sh up -d
+```
+
+
 ## MCP Server
 
 The MCP (Model Context Protocol) Server provides a REST API for managing protein binder design workflows.
@@ -216,6 +278,8 @@ docker compose up
 This starts the dashboard + MCP server + all auxiliary model services together.
 Model services are published on `18081-18084` to avoid collisions with other stacks that commonly use `8081-8084`.
 
+Note: The NIM images used by this stack are `linux/amd64`. On ARM64 hosts, you will need emulation (binfmt/qemu) or use Option 2c.
+
 ```bash
 # From repo root
 export NGC_CLI_API_KEY=<your-key>
@@ -228,7 +292,7 @@ docker compose -f deploy/docker-compose-dashboard.yaml up -d
 
 Ports (defaults):
 - Dashboard: `http://localhost:3000`
-- MCP Server: `http://localhost:8010`
+- MCP Server: `http://localhost:8011`
 - Model services: `http://localhost:18081-18084`
 
 Override ports if needed:
@@ -238,6 +302,24 @@ MCP_DASHBOARD_HOST_PORT=3005 MCP_SERVER_HOST_PORT=8015 docker compose -f deploy/
 ```
 
 Only starts the NIM services for direct API access.
+
+### Option 2c: ARM64-Native Dashboard Stack (No Emulation)
+
+This starts the dashboard + MCP server + ARM64-native model services built from source.
+Model services are published on `18081-18083` (AlphaFold2-Multimer is not included).
+
+```bash
+mkdir -p ~/.cache/nim
+chmod -R 777 ~/.cache/nim
+export HOST_NIM_CACHE=~/.cache/nim
+
+docker compose -f deploy/docker-compose-dashboard-arm64-native.yaml up -d --build
+```
+
+Notes:
+- By default, mock/fallback model outputs are disabled (only enabled when `ALLOW_MOCK_OUTPUTS=1` or in CI).
+- The ARM64 ProteinMPNN service includes the upstream ProteinMPNN code + weights and can run “real weights” in-container.
+- The ARM64 AlphaFold2 and RFDiffusion services are stubs unless you provide real installations; they will report `not_ready` when mocks are disabled.
 
 ### Option 3: Development Mode
 ```bash

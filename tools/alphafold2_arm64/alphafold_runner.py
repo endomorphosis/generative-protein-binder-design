@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
+"""AlphaFold2 runner.
+
+This file was originally a lightweight stub that generated synthetic PDB output
+to keep the ARM64 stack bootable.
+
+Real AlphaFold2 execution requires installing AlphaFold2 + model parameters +
+databases. By default we DO NOT return mock structures unless explicitly
+allowed (or running in CI).
 """
-AlphaFold2 Runner for Native DGX Spark Execution
-Runs AlphaFold2 structure prediction using GPU acceleration
-"""
+
+from __future__ import annotations
 
 import os
 import sys
@@ -13,6 +20,20 @@ from typing import Dict, Any
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def allow_mock_outputs() -> bool:
+    return _truthy_env("ALLOW_MOCK_OUTPUTS") or _truthy_env("CI")
+
+
+def is_ready() -> bool:
+    # Real AlphaFold2 is not packaged in this repo's ARM64 shim.
+    # Readiness is only true when mock outputs are allowed.
+    return allow_mock_outputs()
 
 def predict_structure(fasta_file: str, output_dir: str) -> str:
     """
@@ -25,6 +46,12 @@ def predict_structure(fasta_file: str, output_dir: str) -> str:
     Returns:
         Path to output PDB file
     """
+    if not is_ready():
+        raise RuntimeError(
+            "AlphaFold2 real execution is not available in this ARM64 shim. "
+            "Install AlphaFold2 + model params/DBs or set ALLOW_MOCK_OUTPUTS=1 (CI only)."
+        )
+
     try:
         # Import required libraries
         import jax
@@ -73,8 +100,8 @@ def predict_structure(fasta_file: str, output_dir: str) -> str:
         
         logger.info(f"Sequence length: {len(sequence)}")
         
-        # For now, create a simple structure prediction simulation
-        # In a full implementation, this would use the actual AlphaFold2 model
+        # NOTE: This is a mock structure generator. In production, replace this
+        # runner with a real AlphaFold2 install.
         
         # Generate mock PDB structure with realistic coordinates
         pdb_content = generate_structure_prediction(sequence, gpu_used)
@@ -89,7 +116,7 @@ def predict_structure(fasta_file: str, output_dir: str) -> str:
         
     except Exception as e:
         logger.error(f"AlphaFold2 prediction failed: {e}")
-        # Create a fallback structure
+        # Create a fallback structure (only when mock outputs are allowed)
         output_pdb = os.path.join(output_dir, "result.pdb")
         with open(output_pdb, 'w') as f:
             f.write(generate_fallback_structure(sequence if 'sequence' in locals() else "MKFLKFSLLTAVLLSVVFAFSSCG"))

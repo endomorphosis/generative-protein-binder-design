@@ -80,13 +80,18 @@ services:
 
   # --- MCP server ---
   mcp-server:
+    image: ${MCP_SERVER_IMAGE:-mcp-server:local}
     build:
       context: ../mcp-server
       dockerfile: Dockerfile
     ports:
-      - "${MCP_SERVER_HOST_PORT:-8010}:8000"
+      - "${MCP_SERVER_HOST_PORT:-8011}:8000"
+    volumes:
+      - mcp-config:/config
+      - mcp-models:/models
     environment:
       - MODEL_BACKEND=nim
+      - MCP_CONFIG_PATH=/config/mcp_config.json
       # Use internal service names so host port remaps don't matter.
       - ALPHAFOLD_URL=http://alphafold:8000
       - RFDIFFUSION_URL=http://rfdiffusion:8000
@@ -100,6 +105,7 @@ services:
 
   # --- Dashboard ---
   mcp-dashboard:
+    image: ${MCP_DASHBOARD_IMAGE:-mcp-dashboard:local}
     build:
       context: ../mcp-dashboard
       dockerfile: Dockerfile
@@ -112,3 +118,7 @@ services:
       - NEXT_PUBLIC_MCP_SERVER_URL=http://mcp-server:8000
     depends_on:
       - mcp-server
+
+volumes:
+  mcp-config:
+  mcp-models:

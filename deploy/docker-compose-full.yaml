@@ -95,7 +95,11 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    volumes:
+      - mcp-config:/config
+      - mcp-models:/models
     environment:
+      - MCP_CONFIG_PATH=/config/mcp_config.json
       - ALPHAFOLD_URL=http://alphafold:8000
       - RFDIFFUSION_URL=http://rfdiffusion:8000
       - PROTEINMPNN_URL=http://proteinmpnn:8000
@@ -118,6 +122,10 @@ services:
       - NEXT_PUBLIC_MCP_SERVER_URL=http://localhost:8000
     depends_on:
       - mcp-server
+
+volumes:
+  mcp-config:
+  mcp-models:
 
   ## Jupyter Notebook Server
   ## User-facing container with Jupyter for interactive work

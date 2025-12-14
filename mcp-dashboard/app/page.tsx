@@ -7,6 +7,7 @@ import ResultsViewer from '@/components/ResultsViewer'
 import ServiceStatus from '@/components/ServiceStatus'
 import JupyterLauncher from '@/components/JupyterLauncher'
 import ToolsPanel from '@/components/ToolsPanel'
+import BackendSettings from '@/components/BackendSettings'
 import { Job } from '@/lib/types'
 
 export default function Home() {
@@ -61,8 +62,11 @@ export default function Home() {
                 NVIDIA BioNeMo Blueprint - MCP Dashboard
               </p>
             </div>
-            {/* NVIDIA Logo would be displayed here if available */}
-            <div className="h-12"></div>
+            <div className="flex items-center gap-3">
+              <BackendSettings />
+              {/* NVIDIA Logo would be displayed here if available */}
+              <div className="h-12"></div>
+            </div>
           </div>
         </header>
 

@@ -30,6 +30,8 @@ export default function ServiceStatus() {
       return <span className="h-3 w-3 bg-green-500 rounded-full"></span>
     } else if (serviceStatus === 'not_ready') {
       return <span className="h-3 w-3 bg-yellow-500 rounded-full"></span>
+    } else if (serviceStatus === 'disabled') {
+      return <span className="h-3 w-3 bg-gray-400 rounded-full"></span>
     } else {
       return <span className="h-3 w-3 bg-red-500 rounded-full"></span>
     }

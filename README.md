@@ -34,6 +34,8 @@ Run `./scripts/detect_platform.sh` to check your system and get platform-specifi
 
 ## Get Started
 
+New here (or not an ML engineer)? Start with: [START_HERE.md](START_HERE.md)
+
 ### Quick Platform Check
 ```bash
 ./scripts/detect_platform.sh
@@ -70,7 +72,7 @@ This script will detect your system architecture and provide tailored recommenda
 
 ### Manual Setup
 Deploy the blueprint using [Docker Compose](deploy) or [Helm](protein-design-chart)
-=======
+
 ### Option 1: Full Stack with MCP Server & Dashboard (Recommended)
 Deploy the complete stack including MCP server, web dashboard, and Jupyter:
 ```bash

@@ -22,21 +22,58 @@ import httpx
 import logging
 
 # Import model backend abstraction
-from model_backends import get_backend
+from model_backends import BackendManager, allow_mock_outputs
+from runtime_config import RuntimeConfigManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize model backend based on environment variable
-# MODEL_BACKEND can be: "nim" (default), "native", or "hybrid"
-model_backend = get_backend()
+# Runtime config + backend manager (supports NIM/external/embedded + fallback)
+config_manager = RuntimeConfigManager()
+backend_manager = BackendManager(config_manager)
 
 app = FastAPI(
     title="Protein Binder Design MCP Server",
     description=f"Model Context Protocol server for managing protein design workflows\nBackend: {os.getenv('MODEL_BACKEND', 'nim')}",
     version="1.0.0"
 )
+
+
+@app.get("/api/config")
+async def get_runtime_config() -> Dict[str, Any]:
+    """Get MCP server runtime config (used by the dashboard settings UI)."""
+    return config_manager.get().model_dump()
+
+
+@app.put("/api/config")
+async def update_runtime_config(request: Request) -> Dict[str, Any]:
+    """Update MCP server runtime config.
+
+    Accepts a partial config object; merges into current config and persists
+    to MCP_CONFIG_PATH if set.
+    """
+    patch = await request.json()
+    try:
+        updated = config_manager.update(patch)
+        # Force backend rebuild on next use.
+        _ = backend_manager.get()
+        return updated.model_dump()
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/config/reset")
+async def reset_runtime_config() -> Dict[str, Any]:
+    """Reset runtime config to defaults."""
+    try:
+        updated = config_manager.reset_to_defaults()
+        _ = backend_manager.get()
+        return updated.model_dump()
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
 
 # Enable CORS for dashboard
 app.add_middleware(
@@ -268,6 +305,7 @@ async def mcp_jsonrpc(request: Request) -> Dict[str, Any]:
     params = message.get("params") or {}
 
     try:
+        model_backend = backend_manager.get()
         if method == "initialize":
             return _jsonrpc_result(msg_id, _mcp_initialize_result())
 
@@ -522,7 +560,7 @@ async def health_check() -> Dict[str, str]:
 @app.get("/api/services/status")
 async def check_services() -> Dict[str, Any]:
     """Check status of all backend services"""
-    return await model_backend.check_health()
+    return await backend_manager.get().check_health()
 
 
 @app.get('/sse')
@@ -560,6 +598,7 @@ async def mcp_sse_endpoint(request: Request):
 async def process_job(job_id: str):
     """Process a protein binder design job using configured backend"""
     try:
+        model_backend = backend_manager.get()
         job = jobs_db[job_id]
         job["status"] = "running"
         job["updated_at"] = datetime.now().isoformat()
@@ -582,8 +621,18 @@ async def process_job(job_id: str):
         except Exception as e:
             logger.error(f"AlphaFold2 error: {e}")
             job["progress"]["alphafold"] = f"error: {str(e)}"
-            # For demo purposes, continue with mock data
-            alphafold_result = {"pdb": "mock_structure"}
+            if allow_mock_outputs():
+                # For CI/demo only
+                alphafold_result = {"pdb": "mock_structure"}
+            else:
+                job["status"] = "failed"
+                job["error"] = f"AlphaFold2 failed: {e}"
+                job["updated_at"] = datetime.now().isoformat()
+                try:
+                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": job}))
+                except Exception:
+                    pass
+                return
         try:
             asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
         except Exception:
@@ -603,7 +652,17 @@ async def process_job(job_id: str):
         except Exception as e:
             logger.error(f"RFDiffusion error: {e}")
             job["progress"]["rfdiffusion"] = f"error: {str(e)}"
-            rfdiffusion_result = {"designs": [{"pdb": f"mock_design_{i}"} for i in range(num_designs)]}
+            if allow_mock_outputs():
+                rfdiffusion_result = {"designs": [{"pdb": f"mock_design_{i}"} for i in range(num_designs)]}
+            else:
+                job["status"] = "failed"
+                job["error"] = f"RFDiffusion failed: {e}"
+                job["updated_at"] = datetime.now().isoformat()
+                try:
+                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": job}))
+                except Exception:
+                    pass
+                return
         try:
             asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
         except Exception:
@@ -623,7 +682,17 @@ async def process_job(job_id: str):
         except Exception as e:
             logger.error(f"ProteinMPNN error: {e}")
             job["progress"]["proteinmpnn"] = f"error: {str(e)}"
-            mpnn_results = [{"sequence": f"MOCK_SEQ_{i}"} for i in range(num_designs)]
+            if allow_mock_outputs():
+                mpnn_results = [{"sequence": f"MOCK_SEQ_{i}"} for i in range(num_designs)]
+            else:
+                job["status"] = "failed"
+                job["error"] = f"ProteinMPNN failed: {e}"
+                job["updated_at"] = datetime.now().isoformat()
+                try:
+                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": job}))
+                except Exception:
+                    pass
+                return
         try:
             asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
         except Exception:
@@ -646,7 +715,17 @@ async def process_job(job_id: str):
         except Exception as e:
             logger.error(f"AlphaFold2-Multimer error: {e}")
             job["progress"]["alphafold_multimer"] = f"error: {str(e)}"
-            multimer_results = [{"pdb": f"mock_complex_{i}"} for i in range(num_designs)]
+            if allow_mock_outputs():
+                multimer_results = [{"pdb": f"mock_complex_{i}"} for i in range(num_designs)]
+            else:
+                job["status"] = "failed"
+                job["error"] = f"AlphaFold2-Multimer failed: {e}"
+                job["updated_at"] = datetime.now().isoformat()
+                try:
+                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": job}))
+                except Exception:
+                    pass
+                return
         try:
             asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
         except Exception:

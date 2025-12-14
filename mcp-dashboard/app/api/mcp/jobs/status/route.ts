@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { extractFirstTextContent, mcpCallTool } from '@/lib/mcp-sdk-client'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
 
 function tryParseJson(text: string): any {
   try {

@@ -1,0 +1,122 @@
+name: protein-binder-dashboard-arm64
+
+# ARM64-native dashboard stack.
+#
+# This is intended for ARM64 hosts where NVIDIA NIM images (linux/amd64) won’t
+# run without emulation (qemu/binfmt). It builds the ARM64-native model images
+# from the Dockerfiles in this folder and runs them alongside the MCP server and
+# dashboard.
+#
+# Start from repo root:
+#   mkdir -p ~/.cache/nim && chmod -R 777 ~/.cache/nim
+#   export HOST_NIM_CACHE=~/.cache/nim
+#   docker compose -f deploy/docker-compose-dashboard-arm64-native.yaml up -d --build
+#
+# Notes:
+# - Model services are published on 18081-18083 to avoid collisions with stacks
+#   that commonly use 8081-8083 (and to avoid IPFS collisions like 8082).
+# - AlphaFold2-Multimer is not provided by the ARM64-native model builds.
+
+services:
+  # --- Auxiliary model services (ARM64 native builds) ---
+  alphafold:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.alphafold2-arm64
+      platforms:
+        - linux/arm64
+    image: protein-binder/alphafold2:arm64-latest
+    runtime: nvidia
+    platform: linux/arm64
+    ports:
+      - "${ALPHAFOLD_HOST_PORT:-18081}:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/models
+      - ./outputs/alphafold:/outputs
+    environment:
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+      - ALPHAFOLD_DATA_DIR=/models
+      - ALLOW_MOCK_OUTPUTS=${ALLOW_MOCK_OUTPUTS:-0}
+    restart: unless-stopped
+
+  rfdiffusion:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.rfdiffusion-arm64
+      platforms:
+        - linux/arm64
+    image: protein-binder/rfdiffusion:arm64-latest
+    runtime: nvidia
+    platform: linux/arm64
+    ports:
+      - "${RFDIFFUSION_HOST_PORT:-18082}:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/models
+      - ./outputs/rfdiffusion:/outputs
+    environment:
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+      - RFDIFFUSION_MODEL_DIR=/models
+      - ALLOW_MOCK_OUTPUTS=${ALLOW_MOCK_OUTPUTS:-0}
+    restart: unless-stopped
+
+  proteinmpnn:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.proteinmpnn-arm64
+      platforms:
+        - linux/arm64
+    image: protein-binder/proteinmpnn:arm64-latest
+    runtime: nvidia
+    platform: linux/arm64
+    ports:
+      - "${PROTEINMPNN_HOST_PORT:-18083}:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-~/.cache/nim}:/models
+      - ./outputs/proteinmpnn:/outputs
+    environment:
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+      - PROTEINMPNN_MODEL_DIR=/models
+      - ALLOW_MOCK_OUTPUTS=${ALLOW_MOCK_OUTPUTS:-0}
+    restart: unless-stopped
+
+  # --- MCP server ---
+  mcp-server:
+    image: ${MCP_SERVER_IMAGE:-mcp-server:local}
+    build:
+      context: ../mcp-server
+      dockerfile: Dockerfile
+    ports:
+      - "${MCP_SERVER_HOST_PORT:-8011}:8000"
+    volumes:
+      - mcp-config:/config
+      - mcp-models:/models
+    environment:
+      - MODEL_BACKEND=nim
+      - MCP_CONFIG_PATH=/config/mcp_config.json
+      - ALPHAFOLD_URL=http://alphafold:8000
+      - RFDIFFUSION_URL=http://rfdiffusion:8000
+      - PROTEINMPNN_URL=http://proteinmpnn:8000
+      # Disable multimer for this stack.
+      - ALPHAFOLD_MULTIMER_URL=
+    depends_on:
+      - alphafold
+      - rfdiffusion
+      - proteinmpnn
+
+  # --- Dashboard ---
+  mcp-dashboard:
+    image: ${MCP_DASHBOARD_IMAGE:-mcp-dashboard:local}
+    build:
+      context: ../mcp-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "${MCP_DASHBOARD_HOST_PORT:-3000}:3000"
+    environment:
+      - MCP_SERVER_URL=http://mcp-server:8000
+      - NEXT_PUBLIC_MCP_SERVER_URL=http://mcp-server:8000
+    depends_on:
+      - mcp-server
+
+volumes:
+  mcp-config:
+  mcp-models:

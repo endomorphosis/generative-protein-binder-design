@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
+"""RFDiffusion runner.
+
+This file was originally a lightweight stub that generated synthetic binder PDB
+output to keep the ARM64 stack bootable.
+
+Real RFDiffusion execution requires installing RFdiffusion + model weights.
+By default we DO NOT return mock designs unless explicitly allowed (or in CI).
 """
-RFDiffusion Runner for Native DGX Spark Execution
-Runs RFDiffusion binder design using GPU acceleration
-"""
+
+from __future__ import annotations
 
 import os
 import sys
@@ -16,6 +22,20 @@ from typing import Dict, Any
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def allow_mock_outputs() -> bool:
+    return _truthy_env("ALLOW_MOCK_OUTPUTS") or _truthy_env("CI")
+
+
+def is_ready() -> bool:
+    # Real RFdiffusion is not packaged in this repo's ARM64 shim.
+    # Readiness is only true when mock outputs are allowed.
+    return allow_mock_outputs()
+
 def design_binder(target_pdb_file: str, output_dir: str, design_id: int = 0) -> str:
     """
     Run RFDiffusion binder design
@@ -28,6 +48,12 @@ def design_binder(target_pdb_file: str, output_dir: str, design_id: int = 0) -> 
     Returns:
         Path to output binder PDB file
     """
+    if not is_ready():
+        raise RuntimeError(
+            "RFDiffusion real execution is not available in this ARM64 shim. "
+            "Install RFdiffusion + weights or set ALLOW_MOCK_OUTPUTS=1 (CI only)."
+        )
+
     try:
         # Import required libraries
         import torch
@@ -88,7 +114,7 @@ def design_binder(target_pdb_file: str, output_dir: str, design_id: int = 0) -> 
         
     except Exception as e:
         logger.error(f"RFDiffusion design failed: {e}")
-        # Create a fallback binder
+        # Create a fallback binder (only when mock outputs are allowed)
         output_pdb = os.path.join(output_dir, f"design_{design_id}.pdb")
         with open(output_pdb, 'w') as f:
             f.write(generate_fallback_binder(design_id))
