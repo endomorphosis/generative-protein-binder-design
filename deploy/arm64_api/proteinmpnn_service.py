@@ -20,7 +20,7 @@ def health_ready():
         # Use 503 to align with typical readiness semantics.
         raise HTTPException(
             status_code=503,
-            detail="ProteinMPNN service not ready: real model/weights not available (or mock outputs disabled)",
+            detail="ProteinMPNN service not ready: real model weights/dependencies not available",
         )
     return {"status": "ready"}
 

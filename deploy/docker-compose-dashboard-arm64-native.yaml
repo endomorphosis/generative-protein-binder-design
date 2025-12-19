@@ -35,8 +35,9 @@ services:
       - ./outputs/alphafold:/outputs
     environment:
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
-      - ALPHAFOLD_DATA_DIR=/models
-      - ALLOW_MOCK_OUTPUTS=${ALLOW_MOCK_OUTPUTS:-0}
+      - ALPHAFOLD_DATA_DIR=/models/alphafold
+      # Mock outputs are CI-only. In normal runtime, missing models must be treated as not_ready/failure.
+      - CI=${CI:-0}
     restart: unless-stopped
 
   rfdiffusion:
@@ -55,8 +56,9 @@ services:
       - ./outputs/rfdiffusion:/outputs
     environment:
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
-      - RFDIFFUSION_MODEL_DIR=/models
-      - ALLOW_MOCK_OUTPUTS=${ALLOW_MOCK_OUTPUTS:-0}
+      - RFDIFFUSION_MODEL_DIR=/models/rfdiffusion
+      # Mock outputs are CI-only. In normal runtime, missing models must be treated as not_ready/failure.
+      - CI=${CI:-0}
     restart: unless-stopped
 
   proteinmpnn:
@@ -75,8 +77,9 @@ services:
       - ./outputs/proteinmpnn:/outputs
     environment:
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
-      - PROTEINMPNN_MODEL_DIR=/models
-      - ALLOW_MOCK_OUTPUTS=${ALLOW_MOCK_OUTPUTS:-0}
+      - PROTEINMPNN_MODEL_DIR=/models/proteinmpnn
+      # Mock outputs are CI-only. In normal runtime, missing models must be treated as not_ready/failure.
+      - CI=${CI:-0}
     restart: unless-stopped
 
   # --- MCP server ---
@@ -93,9 +96,14 @@ services:
     environment:
       - MODEL_BACKEND=nim
       - MCP_CONFIG_PATH=/config/mcp_config.json
+      - MCP_ROUTING_MODE=${MCP_ROUTING_MODE:-fallback}
+      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-embedded,nim,external}
       - ALPHAFOLD_URL=http://alphafold:8000
       - RFDIFFUSION_URL=http://rfdiffusion:8000
       - PROTEINMPNN_URL=http://proteinmpnn:8000
+      # Enable non-blocking background provisioning (downloads require explicit URLs).
+      - MCP_EMBEDDED_AUTO_DOWNLOAD=${MCP_EMBEDDED_AUTO_DOWNLOAD:-1}
+      - MCP_BOOTSTRAP_ON_STARTUP=${MCP_BOOTSTRAP_ON_STARTUP:-1}
       # Disable multimer for this stack.
       - ALPHAFOLD_MULTIMER_URL=
     depends_on:

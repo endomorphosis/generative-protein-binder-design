@@ -4,8 +4,11 @@ set -euo pipefail
 # Run the MCP Dashboard + MCP Server stack on either AMD64 or ARM64.
 #
 # Auto mode:
-# - AMD64/x86_64  -> deploy/docker-compose-dashboard.yaml (NIM services; linux/amd64)
-# - ARM64/aarch64 -> deploy/docker-compose-dashboard-arm64-native.yaml (ARM64-native services)
+# - AMD64/x86_64  -> deploy/docker-compose-dashboard.yaml (local NIM services; linux/amd64)
+# - ARM64/aarch64 -> deploy/docker-compose-dashboard-arm64-native.yaml (local ARM64-native services)
+#
+# Explicit mode:
+# - --control-plane -> deploy/docker-compose-dashboard-default.yaml (dashboard+server only; configure cloud via UI)
 #
 # Examples:
 #   ./scripts/run_dashboard_stack.sh up -d
@@ -17,12 +20,14 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/run_dashboard_stack.sh [--amd64|--arm64|--emulated] <docker compose args...>
+  scripts/run_dashboard_stack.sh [--amd64|--arm64|--arm64-host-native|--emulated|--control-plane] <docker compose args...>
 
 Modes:
   --amd64     Force the AMD64 NIM stack (deploy/docker-compose-dashboard.yaml)
   --arm64     Force the ARM64-native stack (deploy/docker-compose-dashboard-arm64-native.yaml)
+  --arm64-host-native  ARM64 host-native AlphaFold2/RFdiffusion (deploy/docker-compose-dashboard-arm64-host-native.yaml)
   --emulated  Same as --amd64, but prints extra guidance for ARM64 hosts
+  --control-plane  MCP server + dashboard only (deploy/docker-compose-dashboard-default.yaml)
 
 Examples:
   ./scripts/run_dashboard_stack.sh up -d
@@ -51,8 +56,16 @@ while [[ $# -gt 0 ]]; do
       MODE="arm64"
       shift
       ;;
+    --arm64-host-native)
+      MODE="arm64-host-native"
+      shift
+      ;;
     --emulated)
       MODE="emulated"
+      shift
+      ;;
+    --control-plane)
+      MODE="control-plane"
       shift
       ;;
     *)
@@ -81,7 +94,7 @@ case "$MODE" in
         ;;
       *)
         echo "Unsupported architecture: $ARCH" >&2
-        echo "Use --amd64 or --arm64 to force a compose file." >&2
+        echo "Use --amd64, --arm64, or --control-plane to select a compose file." >&2
         exit 1
         ;;
     esac
@@ -91,6 +104,12 @@ case "$MODE" in
     ;;
   arm64)
     COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-arm64-native.yaml"
+    ;;
+  arm64-host-native)
+    COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-arm64-host-native.yaml"
+    ;;
+  control-plane)
+    COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-default.yaml"
     ;;
   *)
     echo "Unknown mode: $MODE" >&2

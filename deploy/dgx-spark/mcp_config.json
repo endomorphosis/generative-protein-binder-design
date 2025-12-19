@@ -1,0 +1,46 @@
+{
+  "version": 3,
+  "allow_runtime_updates": true,
+  "routing": {
+    "mode": "fallback",
+    "primary": "external",
+    "order": ["external", "nim", "embedded"]
+  },
+  "nim": {
+    "enabled": true,
+    "service_urls": {
+      "alphafold": null,
+      "rfdiffusion": null,
+      "proteinmpnn": null,
+      "alphafold_multimer": null
+    }
+  },
+  "external": {
+    "enabled": true,
+    "service_urls": {
+      "alphafold": null,
+      "rfdiffusion": null,
+      "proteinmpnn": null,
+      "alphafold_multimer": null
+    }
+  },
+  "embedded": {
+    "enabled": true,
+    "model_dir": "/models",
+    "auto_install": false,
+    "auto_download": true,
+    "downloads": {
+      "proteinmpnn_source_tarball_url": null,
+      "proteinmpnn_weights_url": null,
+      "rfdiffusion_weights_url": null,
+      "alphafold_db_url": null,
+      "alphafold_db_url_full": null,
+      "alphafold_db_subdir": "alphafold_db"
+    },
+    "runners": {
+      "alphafold": { "argv": [], "timeout_seconds": 3600 },
+      "rfdiffusion": { "argv": [], "timeout_seconds": 3600 },
+      "alphafold_multimer": { "argv": [], "timeout_seconds": 3600 }
+    }
+  }
+}

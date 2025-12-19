@@ -71,7 +71,16 @@ export default function ServiceStatus() {
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   {info.status}
+                  {typeof info.http_status === 'number' ? ` (HTTP ${info.http_status})` : ''}
                 </p>
+                {(info.reason || info.error) && (
+                  <p
+                    className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2"
+                    title={info.reason || info.error}
+                  >
+                    {info.reason || info.error}
+                  </p>
+                )}
               </div>
             </div>
           ))}

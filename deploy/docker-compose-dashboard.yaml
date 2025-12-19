@@ -92,6 +92,8 @@ services:
     environment:
       - MODEL_BACKEND=nim
       - MCP_CONFIG_PATH=/config/mcp_config.json
+      - MCP_ROUTING_MODE=${MCP_ROUTING_MODE:-fallback}
+      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-embedded,nim,external}
       # Use internal service names so host port remaps don't matter.
       - ALPHAFOLD_URL=http://alphafold:8000
       - RFDIFFUSION_URL=http://rfdiffusion:8000

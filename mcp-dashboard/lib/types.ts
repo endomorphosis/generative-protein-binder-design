@@ -29,6 +29,10 @@ export interface ServiceStatus {
     status: string
     url: string
     error?: string
+    reason?: string
+    http_status?: number
+    backend?: string
+    selected_provider?: string
   }
 }
 

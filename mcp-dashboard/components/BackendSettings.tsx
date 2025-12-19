@@ -21,6 +21,20 @@ type EmbeddedConfig = {
   enabled: boolean
   model_dir: string
   auto_install: boolean
+  auto_download: boolean
+  downloads: {
+    proteinmpnn_source_tarball_url: string | null
+    proteinmpnn_weights_url: string | null
+    rfdiffusion_weights_url: string | null
+    alphafold_db_url: string | null
+    alphafold_db_url_full: string | null
+    alphafold_db_subdir: string
+  }
+  runners: {
+    alphafold: { argv: string[]; timeout_seconds: number }
+    rfdiffusion: { argv: string[]; timeout_seconds: number }
+    alphafold_multimer: { argv: string[]; timeout_seconds: number }
+  }
 }
 
 type MCPServerConfig = {
@@ -44,8 +58,14 @@ function normalizeConfig(raw: any): MCPServerConfig {
     return out
   }
 
+  const ensureRunner = (r: any, defaults: { argv: string[]; timeout_seconds: number }) => {
+    const argv = Array.isArray(r?.argv) ? r.argv.map((x: any) => String(x)) : defaults.argv
+    const timeout = Number.isFinite(r?.timeout_seconds) ? Number(r.timeout_seconds) : defaults.timeout_seconds
+    return { argv, timeout_seconds: Math.max(1, timeout | 0) }
+  }
+
   return {
-    version: cfg?.version ?? 1,
+    version: cfg?.version ?? 2,
     allow_runtime_updates: cfg?.allow_runtime_updates ?? true,
     routing: {
       mode: cfg?.routing?.mode ?? 'fallback',
@@ -64,6 +84,20 @@ function normalizeConfig(raw: any): MCPServerConfig {
       enabled: cfg?.embedded?.enabled ?? true,
       model_dir: cfg?.embedded?.model_dir ?? '/models',
       auto_install: cfg?.embedded?.auto_install ?? false,
+      auto_download: cfg?.embedded?.auto_download ?? false,
+      downloads: {
+        proteinmpnn_source_tarball_url: cfg?.embedded?.downloads?.proteinmpnn_source_tarball_url ?? null,
+        proteinmpnn_weights_url: cfg?.embedded?.downloads?.proteinmpnn_weights_url ?? null,
+        rfdiffusion_weights_url: cfg?.embedded?.downloads?.rfdiffusion_weights_url ?? null,
+        alphafold_db_url: cfg?.embedded?.downloads?.alphafold_db_url ?? null,
+        alphafold_db_url_full: cfg?.embedded?.downloads?.alphafold_db_url_full ?? null,
+        alphafold_db_subdir: cfg?.embedded?.downloads?.alphafold_db_subdir ?? 'alphafold_db',
+      },
+      runners: {
+        alphafold: ensureRunner(cfg?.embedded?.runners?.alphafold, { argv: [], timeout_seconds: 3600 }),
+        rfdiffusion: ensureRunner(cfg?.embedded?.runners?.rfdiffusion, { argv: [], timeout_seconds: 3600 }),
+        alphafold_multimer: ensureRunner(cfg?.embedded?.runners?.alphafold_multimer, { argv: [], timeout_seconds: 3600 }),
+      },
     },
   }
 }
@@ -74,6 +108,15 @@ export default function BackendSettings() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [config, setConfig] = useState<MCPServerConfig | null>(null)
+  const [bootstrapping, setBootstrapping] = useState(false)
+  const [bootstrapResult, setBootstrapResult] = useState<any | null>(null)
+
+  const [bootstrapModels, setBootstrapModels] = useState<Record<ServiceName, boolean>>({
+    alphafold: false,
+    rfdiffusion: false,
+    proteinmpnn: true,
+    alphafold_multimer: false,
+  })
 
   const canEdit = config?.allow_runtime_updates !== false
 
@@ -128,6 +171,34 @@ export default function BackendSettings() {
     }
   }
 
+  const runEmbeddedBootstrap = async () => {
+    if (!config) return
+    setBootstrapping(true)
+    setError(null)
+    setBootstrapResult(null)
+    try {
+      const models = Object.entries(bootstrapModels)
+        .filter(([, v]) => v)
+        .map(([k]) => k)
+        // multimer isn’t supported by the embedded bootstrap today
+        .filter((k) => k !== 'alphafold_multimer')
+
+      const res = await fetch('/api/mcp/embedded/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ models }),
+      })
+      const text = await res.text()
+      if (!res.ok) throw new Error(text || `Bootstrap failed (${res.status})`)
+      const json = JSON.parse(text)
+      setBootstrapResult(json)
+    } catch (e: any) {
+      setError(e?.message ?? 'Embedded bootstrap failed')
+    } finally {
+      setBootstrapping(false)
+    }
+  }
+
   const reset = async () => {
     setSaving(true)
     setError(null)
@@ -164,6 +235,39 @@ export default function BackendSettings() {
         external: { ...config.external, service_urls: { ...config.external.service_urls, [service]: next } },
       })
     }
+  }
+
+  const setRunnerArgv = (runnerKey: 'alphafold' | 'rfdiffusion' | 'alphafold_multimer', text: string) => {
+    if (!config) return
+    const argv = text
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    setConfig({
+      ...config,
+      embedded: {
+        ...config.embedded,
+        runners: {
+          ...config.embedded.runners,
+          [runnerKey]: { ...config.embedded.runners[runnerKey], argv },
+        },
+      },
+    })
+  }
+
+  const setRunnerTimeout = (runnerKey: 'alphafold' | 'rfdiffusion' | 'alphafold_multimer', value: string) => {
+    if (!config) return
+    const t = Math.max(1, parseInt(value || '0', 10) || 0)
+    setConfig({
+      ...config,
+      embedded: {
+        ...config.embedded,
+        runners: {
+          ...config.embedded.runners,
+          [runnerKey]: { ...config.embedded.runners[runnerKey], timeout_seconds: t },
+        },
+      },
+    })
   }
 
   return (
@@ -367,9 +471,280 @@ export default function BackendSettings() {
                             />
                             allow auto-install (advanced)
                           </label>
+
+                          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={config.embedded.auto_download}
+                              disabled={!canEdit}
+                              onChange={(e) =>
+                                setConfig({
+                                  ...config,
+                                  embedded: { ...config.embedded, auto_download: e.target.checked },
+                                })
+                              }
+                            />
+                            allow auto-download (requires explicit URLs)
+                          </label>
+
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Embedded mode currently supports ProteinMPNN. With auto-install enabled, the server may download code/deps; weights may still need a mount or a configured URL.
+                            Embedded mode can download assets into the model dir. ProteinMPNN can run embedded once code+weights+deps are present. AlphaFold/RFDiffusion embedded execution is not enabled by default (downloads are supported, but running them still requires extra installs).
                           </p>
+
+                          <div className="mt-2 rounded-md border border-gray-200 p-2 dark:border-gray-800">
+                            <div className="mb-2 text-xs font-semibold text-gray-800 dark:text-gray-200">
+                              Embedded runner commands (advanced)
+                            </div>
+                            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                              Provide one CLI arg per line. Placeholders supported: {'{model_dir}'}, {'{work_dir}'}, {'{fasta_path}'}, {'{target_pdb_path}'}, {'{output_dir}'}, {'{output_pdb_path}'}, {'{num_designs}'}.
+                            </p>
+
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                              <div>
+                                <div className="mb-1 text-xs font-semibold text-gray-800 dark:text-gray-200">AlphaFold</div>
+                                <textarea
+                                  disabled={!canEdit}
+                                  value={(config.embedded.runners.alphafold.argv || []).join('\n')}
+                                  onChange={(e) => setRunnerArgv('alphafold', e.target.value)}
+                                  className="h-24 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-xs dark:border-gray-700 dark:bg-gray-950"
+                                  placeholder="python\n/app/run_alphafold.py\n--fasta\n{fasta_path}\n--out\n{output_pdb_path}"
+                                />
+                                <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                                  Timeout (seconds)
+                                  <input
+                                    disabled={!canEdit}
+                                    type="number"
+                                    min={1}
+                                    value={config.embedded.runners.alphafold.timeout_seconds}
+                                    onChange={(e) => setRunnerTimeout('alphafold', e.target.value)}
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                  />
+                                </label>
+                              </div>
+
+                              <div>
+                                <div className="mb-1 text-xs font-semibold text-gray-800 dark:text-gray-200">RFDiffusion</div>
+                                <textarea
+                                  disabled={!canEdit}
+                                  value={(config.embedded.runners.rfdiffusion.argv || []).join('\n')}
+                                  onChange={(e) => setRunnerArgv('rfdiffusion', e.target.value)}
+                                  className="h-24 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-xs dark:border-gray-700 dark:bg-gray-950"
+                                  placeholder="python\n/app/run_rfdiffusion.py\n--target\n{target_pdb_path}\n--outdir\n{output_dir}\n--num\n{num_designs}"
+                                />
+                                <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                                  Timeout (seconds)
+                                  <input
+                                    disabled={!canEdit}
+                                    type="number"
+                                    min={1}
+                                    value={config.embedded.runners.rfdiffusion.timeout_seconds}
+                                    onChange={(e) => setRunnerTimeout('rfdiffusion', e.target.value)}
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                  />
+                                </label>
+                              </div>
+
+                              <div>
+                                <div className="mb-1 text-xs font-semibold text-gray-800 dark:text-gray-200">AlphaFold multimer</div>
+                                <textarea
+                                  disabled={!canEdit}
+                                  value={(config.embedded.runners.alphafold_multimer.argv || []).join('\n')}
+                                  onChange={(e) => setRunnerArgv('alphafold_multimer', e.target.value)}
+                                  className="h-24 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-xs dark:border-gray-700 dark:bg-gray-950"
+                                  placeholder="python\n/app/run_alphafold_multimer.py\n--fasta\n{fasta_path}\n--out\n{output_pdb_path}"
+                                />
+                                <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                                  Timeout (seconds)
+                                  <input
+                                    disabled={!canEdit}
+                                    type="number"
+                                    min={1}
+                                    value={config.embedded.runners.alphafold_multimer.timeout_seconds}
+                                    onChange={(e) => setRunnerTimeout('alphafold_multimer', e.target.value)}
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 rounded-md border border-gray-200 p-2 dark:border-gray-800">
+                            <div className="mb-2 text-xs font-semibold text-gray-800 dark:text-gray-200">
+                              Embedded download URLs
+                            </div>
+
+                            <label className="block text-xs text-gray-600 dark:text-gray-300">
+                              ProteinMPNN source tarball URL
+                              <input
+                                disabled={!canEdit}
+                                value={config.embedded.downloads.proteinmpnn_source_tarball_url ?? ''}
+                                onChange={(e) =>
+                                  setConfig({
+                                    ...config,
+                                    embedded: {
+                                      ...config.embedded,
+                                      downloads: {
+                                        ...config.embedded.downloads,
+                                        proteinmpnn_source_tarball_url: e.target.value.trim() || null,
+                                      },
+                                    },
+                                  })
+                                }
+                                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                placeholder="https://github.com/dauparas/ProteinMPNN/archive/refs/heads/main.tar.gz"
+                              />
+                            </label>
+
+                            <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                              ProteinMPNN weights URL
+                              <input
+                                disabled={!canEdit}
+                                value={config.embedded.downloads.proteinmpnn_weights_url ?? ''}
+                                onChange={(e) =>
+                                  setConfig({
+                                    ...config,
+                                    embedded: {
+                                      ...config.embedded,
+                                      downloads: {
+                                        ...config.embedded.downloads,
+                                        proteinmpnn_weights_url: e.target.value.trim() || null,
+                                      },
+                                    },
+                                  })
+                                }
+                                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                placeholder="https://.../v_48_020.pt"
+                              />
+                            </label>
+
+                            <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                              RFDiffusion weights URL
+                              <input
+                                disabled={!canEdit}
+                                value={config.embedded.downloads.rfdiffusion_weights_url ?? ''}
+                                onChange={(e) =>
+                                  setConfig({
+                                    ...config,
+                                    embedded: {
+                                      ...config.embedded,
+                                      downloads: {
+                                        ...config.embedded.downloads,
+                                        rfdiffusion_weights_url: e.target.value.trim() || null,
+                                      },
+                                    },
+                                  })
+                                }
+                                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                placeholder="https://.../rfdiffusion_weights.zip"
+                              />
+                            </label>
+
+                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                              If you want full AlphaFold DBs, either configure staged downloads here (reduced first, then full extras) or
+                              set the AlphaFold URL under NIM/External to point at a service that already has the full DBs.
+                            </p>
+
+                            <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                              AlphaFold DB URL (reduced / initial)
+                              <input
+                                disabled={!canEdit}
+                                value={config.embedded.downloads.alphafold_db_url ?? ''}
+                                onChange={(e) =>
+                                  setConfig({
+                                    ...config,
+                                    embedded: {
+                                      ...config.embedded,
+                                      downloads: {
+                                        ...config.embedded.downloads,
+                                        alphafold_db_url: e.target.value.trim() || null,
+                                      },
+                                    },
+                                  })
+                                }
+                                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                placeholder="https://.../alphafold_db.tar.gz"
+                              />
+                            </label>
+
+                            <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                              AlphaFold DB URL (full extras, optional)
+                              <input
+                                disabled={!canEdit}
+                                value={config.embedded.downloads.alphafold_db_url_full ?? ''}
+                                onChange={(e) =>
+                                  setConfig({
+                                    ...config,
+                                    embedded: {
+                                      ...config.embedded,
+                                      downloads: {
+                                        ...config.embedded.downloads,
+                                        alphafold_db_url_full: e.target.value.trim() || null,
+                                      },
+                                    },
+                                  })
+                                }
+                                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                placeholder="https://.../alphafold_db_full_extras.tar.gz"
+                              />
+                              <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                Downloaded after the reduced pack completes.
+                              </p>
+                            </label>
+
+                            <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                              AlphaFold DB subdir
+                              <input
+                                disabled={!canEdit}
+                                value={config.embedded.downloads.alphafold_db_subdir}
+                                onChange={(e) =>
+                                  setConfig({
+                                    ...config,
+                                    embedded: {
+                                      ...config.embedded,
+                                      downloads: {
+                                        ...config.embedded.downloads,
+                                        alphafold_db_subdir: e.target.value.trim() || 'alphafold_db',
+                                      },
+                                    },
+                                  })
+                                }
+                                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                placeholder="alphafold_db"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="mt-2 rounded-md border border-gray-200 p-2 dark:border-gray-800">
+                            <div className="mb-2 text-xs font-semibold text-gray-800 dark:text-gray-200">
+                              Download now
+                            </div>
+                            <div className="flex flex-wrap gap-3 text-sm text-gray-700 dark:text-gray-300">
+                              {(['proteinmpnn', 'rfdiffusion', 'alphafold'] as ServiceName[]).map((m) => (
+                                <label key={m} className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={bootstrapModels[m]}
+                                    onChange={(e) => setBootstrapModels({ ...bootstrapModels, [m]: e.target.checked })}
+                                  />
+                                  {m}
+                                </label>
+                              ))}
+                            </div>
+                            <button
+                              onClick={runEmbeddedBootstrap}
+                              disabled={!config.embedded.enabled || bootstrapping}
+                              className="mt-2 rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-800 hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-200"
+                              title="Downloads into the embedded model dir (/models)"
+                            >
+                              {bootstrapping ? 'Downloading…' : 'Download embedded assets'}
+                            </button>
+
+                            {bootstrapResult && (
+                              <pre className="mt-2 max-h-48 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-700 dark:bg-gray-950 dark:text-gray-200">
+                                {JSON.stringify(bootstrapResult, null, 2)}
+                              </pre>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>

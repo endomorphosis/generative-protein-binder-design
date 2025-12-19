@@ -28,7 +28,8 @@ def _truthy_env(name: str) -> bool:
 
 
 def allow_mock_outputs() -> bool:
-    return _truthy_env("ALLOW_MOCK_OUTPUTS") or _truthy_env("CI")
+    # Safety: mock outputs are for CI/testing only.
+    return _truthy_env("CI")
 
 
 def proteinmpnn_home() -> Optional[Path]:
@@ -111,11 +112,11 @@ def generate_sequence(backbone_pdb_file: str) -> str:
     """
     if not is_ready():
         if allow_mock_outputs():
-            logger.warning("ProteinMPNN real dependencies not available; returning mock sequence (ALLOW_MOCK_OUTPUTS/CI enabled)")
+            logger.warning("ProteinMPNN real dependencies not available; returning mock sequence (CI enabled)")
             return generate_fallback_sequence()
         raise RuntimeError(
             "ProteinMPNN real execution is not available in this environment. "
-            "Install ProteinMPNN + weights and required deps (torch, numpy), or set ALLOW_MOCK_OUTPUTS=1 (CI only)."
+            "Install ProteinMPNN + weights and required deps (torch, numpy). (Mock outputs are CI-only.)"
         )
 
     home = proteinmpnn_home()

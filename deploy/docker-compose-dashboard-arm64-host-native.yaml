@@ -1,0 +1,73 @@
+name: protein-binder-dashboard-arm64-host-native
+
+# ARM64 host-native stack (no CI shims):
+# - Runs MCP Server + Dashboard in containers
+# - Routes AlphaFold2 + RFdiffusion to host-native services (FastAPI wrappers)
+# - Keeps ProteinMPNN as a container for convenience
+#
+# Start:
+#   docker compose -f deploy/docker-compose-dashboard-arm64-host-native.yaml up -d --build
+#
+# Host-native services:
+#   ./scripts/run_arm64_native_model_services.sh
+
+services:
+  proteinmpnn:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.proteinmpnn-arm64
+    image: protein-binder/proteinmpnn:arm64-latest
+    ports:
+      - "${PROTEINMPNN_HOST_PORT:-18083}:8000"
+    volumes:
+      - ./outputs/proteinmpnn:/outputs
+      - mcp-models:/models
+    environment:
+      - MODEL_DIR=/models
+    restart: unless-stopped
+
+  mcp-server:
+    image: ${MCP_SERVER_IMAGE:-mcp-server:local}
+    build:
+      context: ../mcp-server
+      dockerfile: Dockerfile
+    ports:
+      - "${MCP_SERVER_HOST_PORT:-8011}:8000"
+    volumes:
+      - mcp-config:/config
+      - mcp-models:/models
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - MCP_CONFIG_PATH=/config/mcp_config.json
+      - MCP_ROUTING_MODE=${MCP_ROUTING_MODE:-fallback}
+      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-embedded,nim,external}
+
+      # Route AlphaFold2 + RFdiffusion to host-native services.
+      - ALPHAFOLD_URL=${ALPHAFOLD_URL:-http://host.docker.internal:18081}
+      - RFDIFFUSION_URL=${RFDIFFUSION_URL:-http://host.docker.internal:18082}
+      - PROTEINMPNN_URL=http://proteinmpnn:8000
+      - ALPHAFOLD_MULTIMER_URL=
+
+      - MCP_EMBEDDED_AUTO_DOWNLOAD=${MCP_EMBEDDED_AUTO_DOWNLOAD:-1}
+      - MCP_BOOTSTRAP_ON_STARTUP=${MCP_BOOTSTRAP_ON_STARTUP:-1}
+    depends_on:
+      - proteinmpnn
+    restart: unless-stopped
+
+  mcp-dashboard:
+    image: ${MCP_DASHBOARD_IMAGE:-mcp-dashboard:local}
+    build:
+      context: ../mcp-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "${MCP_DASHBOARD_HOST_PORT:-3000}:3000"
+    environment:
+      - MCP_SERVER_URL=http://mcp-server:8000
+      - NEXT_PUBLIC_MCP_SERVER_URL=http://mcp-server:8000
+    depends_on:
+      - mcp-server
+
+volumes:
+  mcp-config:
+  mcp-models:

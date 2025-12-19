@@ -60,6 +60,10 @@ info "Compose file: $COMPOSE_FILE"
 info "Dashboard URL: http://localhost:${MCP_DASHBOARD_HOST_PORT}"
 info "MCP Server URL: http://localhost:${MCP_SERVER_HOST_PORT}"
 
+if [[ -n "${MCP_SERVER_URL:-}" ]] && [[ "$MCP_SERVER_URL" != "http://localhost:${MCP_SERVER_HOST_PORT}" ]]; then
+  warn "MCP_SERVER_URL is set to '$MCP_SERVER_URL' (may override stack server URL http://localhost:${MCP_SERVER_HOST_PORT})"
+fi
+
 STACK_RUNNING=0
 if docker compose -f "$COMPOSE_FILE" ps -q >/dev/null 2>&1; then
   if [[ -n "$(docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | head -n 1)" ]]; then

@@ -1,39 +1,30 @@
 import { NextResponse } from 'next/server'
+import { extractFirstTextContent, mcpCallTool } from '@/lib/mcp-sdk-client'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 
-function getMcpBaseUrl() {
-  return (
-    process.env.MCP_SERVER_URL ||
-    process.env.NEXT_PUBLIC_MCP_SERVER_URL ||
-    'http://localhost:8000'
-  ).replace(/\/$/, '')
+function tryParseJson(text: string): any {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
 }
 
 export async function GET() {
-  const res = await fetch(`${getMcpBaseUrl()}/api/config`, {
-    cache: 'no-store',
-  })
-  const body = await res.text()
-  return new NextResponse(body, {
-    status: res.status,
-    headers: { 'Content-Type': 'application/json' },
-  })
+  const result = await mcpCallTool('get_runtime_config', {})
+  const text = extractFirstTextContent(result)
+  const parsed = text ? tryParseJson(text) : null
+  return NextResponse.json(parsed ?? {})
 }
 
 export async function PUT(request: Request) {
-  const payload = await request.text()
-  const res = await fetch(`${getMcpBaseUrl()}/api/config`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: payload,
-    cache: 'no-store',
-  })
-  const body = await res.text()
-  return new NextResponse(body, {
-    status: res.status,
-    headers: { 'Content-Type': 'application/json' },
-  })
+  const payloadText = await request.text()
+  const payload = payloadText ? tryParseJson(payloadText) : null
+  const result = await mcpCallTool('update_runtime_config', { patch: payload ?? {} })
+  const text = extractFirstTextContent(result)
+  const parsed = text ? tryParseJson(text) : null
+  return NextResponse.json(parsed ?? {})
 }

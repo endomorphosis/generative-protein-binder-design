@@ -19,7 +19,10 @@ def health_ready():
     if not getattr(alphafold_runner, "is_ready", lambda: True)():
         raise HTTPException(
             status_code=503,
-            detail="AlphaFold2 service not ready: real model/DBs not available (or mock outputs disabled)",
+            detail=(
+                "AlphaFold2 service not ready: ARM64 container is a CI-only shim (no real inference). "
+                "Configure a real provider via MCP Dashboard (External/NIM) or deploy native AlphaFold2."
+            ),
         )
     return {"status": "ready"}
 

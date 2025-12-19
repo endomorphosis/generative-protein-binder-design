@@ -11,14 +11,24 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install wget for model downloads
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir fastapi uvicorn pydantic
 
 COPY tools/alphafold2_arm64/alphafold_runner.py /app/alphafold_runner.py
 COPY deploy/arm64_api/alphafold_service.py /app/service.py
+COPY scripts/init_models.sh /app/init_models.sh
+
+# Make init script executable
+RUN chmod +x /app/init_models.sh
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import service; print('ok')" || exit 1
 
-CMD ["python", "-m", "uvicorn", "service:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run init script before starting service (optional - downloads models if needed)
+CMD ["/bin/bash", "-c", "/app/init_models.sh || true && python -m uvicorn service:app --host 0.0.0.0 --port 8000"]

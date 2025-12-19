@@ -55,6 +55,7 @@ This script will detect your system architecture and provide tailored recommenda
 
 #### ARM64-Specific Guides
 - [📘 **ARM64 Complete Guide**](docs/ARM64_COMPLETE_GUIDE.md) - **NEW: Comprehensive ARM64 support guide**
+- [🎯 **ARM64 Model Setup**](docs/ARM64_MODEL_SETUP.md) - **NEW: Model provisioning and configuration**
 - [🔌 **ARM64 CUDA Fallback Guide**](docs/ARM64_CUDA_FALLBACK_GUIDE.md) - **NEW: Fallback solutions for ARM64 CUDA**
 - [🚀 ARM64 Quick Start](docs/ARM64_QUICK_START.md) - Quick start for ARM64 systems
 - [✅ ARM64 Completion Checklist](docs/ARM64_COMPLETION_CHECKLIST.md) - Step-by-step guide to complete ARM64 porting

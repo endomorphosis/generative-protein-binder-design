@@ -9,9 +9,21 @@ set -euo pipefail
 #   ./scripts/submit_demo_job.sh "MKT..."
 #
 # Env:
-#   MCP_SERVER_URL (default: http://localhost:8011)
+#   MCP_SERVER_URL (optional override)
 
-MCP_SERVER_URL="${MCP_SERVER_URL:-http://localhost:${MCP_SERVER_HOST_PORT:-8011}}"
+if [[ -n "${MCP_SERVER_URL:-}" ]]; then
+  : "Using provided MCP_SERVER_URL"
+else
+  # Out-of-the-box, both a "local" MCP server (8010) and a "stack" MCP server (8011)
+  # may be running. Prefer the stack server when available.
+  if curl -fsS "http://localhost:8011/health" >/dev/null 2>&1; then
+    MCP_SERVER_URL="http://localhost:8011"
+  elif curl -fsS "http://localhost:8010/health" >/dev/null 2>&1; then
+    MCP_SERVER_URL="http://localhost:8010"
+  else
+    MCP_SERVER_URL="http://localhost:${MCP_SERVER_HOST_PORT:-8011}"
+  fi
+fi
 
 SEQUENCE="${1:-}"
 if [[ -z "$SEQUENCE" ]]; then

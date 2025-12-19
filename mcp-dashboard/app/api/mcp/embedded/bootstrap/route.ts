@@ -13,8 +13,11 @@ function tryParseJson(text: string): any {
   }
 }
 
-export async function POST() {
-  const result = await mcpCallTool('reset_runtime_config', {})
+export async function POST(request: Request) {
+  const payloadText = await request.text()
+  const payload = payloadText ? tryParseJson(payloadText) : null
+  const models = Array.isArray(payload?.models) ? payload.models : []
+  const result = await mcpCallTool('embedded_bootstrap', { models })
   const text = extractFirstTextContent(result)
   const parsed = text ? tryParseJson(text) : null
   return NextResponse.json(parsed ?? {})

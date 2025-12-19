@@ -22,7 +22,7 @@ import httpx
 import logging
 
 # Import model backend abstraction
-from model_backends import BackendManager, allow_mock_outputs
+from model_backends import BackendManager, EmbeddedBackend, allow_mock_outputs
 from runtime_config import RuntimeConfigManager
 
 # Configure logging
@@ -38,6 +38,81 @@ app = FastAPI(
     description=f"Model Context Protocol server for managing protein design workflows\nBackend: {os.getenv('MODEL_BACKEND', 'nim')}",
     version="1.0.0"
 )
+
+
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _running_in_docker() -> bool:
+    try:
+        return os.path.exists("/.dockerenv") or _truthy_env("DOCKER_CONTAINER")
+    except Exception:
+        return False
+
+
+async def _maybe_autobootstrap_embedded_assets() -> None:
+    """Start a best-effort embedded bootstrap in the background.
+
+    This is intentionally non-blocking: the dashboard and server come up
+    immediately, while assets stream in.
+    """
+    try:
+        cfg = config_manager.get().embedded
+        if not getattr(cfg, "enabled", True):
+            return
+        if not (getattr(cfg, "auto_download", False) or getattr(cfg, "auto_install", False)):
+            return
+
+        # Default behavior:
+        # - in Docker: auto bootstrap unless explicitly disabled
+        # - outside Docker: require explicit opt-in
+        if _running_in_docker():
+            if _truthy_env("MCP_BOOTSTRAP_ON_STARTUP") is False and ("MCP_BOOTSTRAP_ON_STARTUP" in os.environ):
+                return
+        else:
+            if not _truthy_env("MCP_BOOTSTRAP_ON_STARTUP"):
+                return
+
+        # Only bootstrap models that have explicit URLs configured (except ProteinMPNN which may bootstrap source).
+        models: List[str] = []
+        try:
+            dl = getattr(cfg, "downloads", None)
+            if (
+                getattr(dl, "proteinmpnn_source_tarball_url", None)
+                or getattr(dl, "proteinmpnn_weights_url", None)
+                or os.getenv("PROTEINMPNN_WEIGHTS_URL")
+                or os.getenv("PROTEINMPNN_SOURCE_TARBALL_URL")
+                or _truthy_env("MCP_PROTEINMPNN_DEFAULT_WEIGHTS")
+            ):
+                models.append("proteinmpnn")
+            if (getattr(dl, "rfdiffusion_weights_url", None) or os.getenv("RFDIFFUSION_WEIGHTS_URL") or _truthy_env("MCP_RFDIFFUSION_DEFAULT_WEIGHTS")):
+                models.append("rfdiffusion")
+            preset = (os.getenv("MCP_ALPHAFOLD_DB_PRESET") or "").strip().lower()
+            if (getattr(dl, "alphafold_db_url", None) or os.getenv("ALPHAFOLD_DB_URL") or preset in {"reduced", "reduced_dbs"}):
+                models.append("alphafold")
+        except Exception:
+            pass
+
+        # If nothing is configured, do nothing (no surprises).
+        if not models:
+            return
+
+        logger.info("Starting background embedded bootstrap: %s", models)
+        backend = EmbeddedBackend(cfg)
+        await asyncio.to_thread(backend.bootstrap_assets, models)
+        logger.info("Background embedded bootstrap finished")
+    except Exception as exc:
+        logger.warning("Background embedded bootstrap failed: %s", exc)
+
+
+@app.on_event("startup")
+async def _startup_tasks() -> None:
+    # Do not block startup; run bootstrap in background.
+    try:
+        asyncio.create_task(_maybe_autobootstrap_embedded_assets())
+    except Exception:
+        pass
 
 
 @app.get("/api/config")
@@ -74,6 +149,44 @@ async def reset_runtime_config() -> Dict[str, Any]:
         return updated.model_dump()
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
+
+
+@app.post("/api/embedded/bootstrap")
+async def embedded_bootstrap(request: Request) -> Dict[str, Any]:
+    """Trigger a best-effort embedded download/bootstrap.
+
+    Body:
+      {"models": ["proteinmpnn", "rfdiffusion", "alphafold"]}
+
+    This is intended for convenience (downloads to /models). It only downloads
+    assets when explicit URLs are configured in runtime config.
+    """
+
+    payload = {}
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    models = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(models, list) or not models:
+        models = ["proteinmpnn"]
+
+    cfg = config_manager.get().embedded
+    if not cfg.enabled:
+        raise HTTPException(status_code=400, detail="Embedded provider is disabled")
+    if not getattr(cfg, "auto_download", False) and not getattr(cfg, "auto_install", False):
+        raise HTTPException(
+            status_code=400,
+            detail="Embedded bootstrap is disabled (enable embedded.auto_download or embedded.auto_install)",
+        )
+
+    backend = EmbeddedBackend(cfg)
+    try:
+        result = await asyncio.to_thread(backend.bootstrap_assets, models)
+        return {"ok": True, "results": result}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 # Enable CORS for dashboard
 app.add_middleware(
@@ -132,6 +245,43 @@ async def list_tools() -> Dict[str, List[ToolInfo]]:
     """List available MCP tools"""
     return {
         "tools": [
+            ToolInfo(
+                name="get_runtime_config",
+                description="Get the MCP server runtime routing/provider config",
+                inputSchema={"type": "object", "properties": {}},
+            ),
+            ToolInfo(
+                name="update_runtime_config",
+                description="Update the MCP server runtime config (deep-merged and persisted when enabled)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "patch": {
+                            "type": "object",
+                            "description": "Partial config patch to merge into current config",
+                        }
+                    },
+                },
+            ),
+            ToolInfo(
+                name="reset_runtime_config",
+                description="Reset the MCP server runtime config to defaults",
+                inputSchema={"type": "object", "properties": {}},
+            ),
+            ToolInfo(
+                name="embedded_bootstrap",
+                description="Trigger best-effort embedded asset bootstrap/download into /models",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "models": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Subset of models to bootstrap: proteinmpnn, rfdiffusion, alphafold",
+                        }
+                    },
+                },
+            ),
             ToolInfo(
                 name="design_protein_binder",
                 description="Design protein binders for a target sequence",
@@ -316,6 +466,59 @@ async def mcp_jsonrpc(request: Request) -> Dict[str, Any]:
         if method == "tools/call":
             name = params.get("name")
             arguments = params.get("arguments") or {}
+
+            if name == "get_runtime_config":
+                cfg = config_manager.get().model_dump()
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(cfg, indent=2)}], "isError": False},
+                )
+
+            if name == "update_runtime_config":
+                patch = arguments
+                if isinstance(arguments, dict) and isinstance(arguments.get("patch"), dict):
+                    patch = arguments.get("patch")
+                if not isinstance(patch, dict):
+                    return _jsonrpc_error(msg_id, -32602, "Invalid patch")
+                updated = config_manager.update(patch)
+                _ = backend_manager.get()
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(updated.model_dump(), indent=2)}], "isError": False},
+                )
+
+            if name == "reset_runtime_config":
+                updated = config_manager.reset_to_defaults()
+                _ = backend_manager.get()
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(updated.model_dump(), indent=2)}], "isError": False},
+                )
+
+            if name == "embedded_bootstrap":
+                models = []
+                if isinstance(arguments, dict) and isinstance(arguments.get("models"), list):
+                    models = [str(x) for x in arguments.get("models") if str(x).strip()]
+                if not models:
+                    models = ["proteinmpnn"]
+
+                cfg = config_manager.get().embedded
+                if not cfg.enabled:
+                    return _jsonrpc_error(msg_id, -32000, "Embedded provider is disabled")
+                if not getattr(cfg, "auto_download", False) and not getattr(cfg, "auto_install", False):
+                    return _jsonrpc_error(
+                        msg_id,
+                        -32000,
+                        "Embedded bootstrap is disabled (enable embedded.auto_download or embedded.auto_install)",
+                    )
+
+                backend = EmbeddedBackend(cfg)
+                result = await asyncio.to_thread(backend.bootstrap_assets, models)
+                payload = {"ok": True, "results": result}
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(payload, indent=2)}], "isError": False},
+                )
 
             if name == "design_protein_binder":
                 input_data = ProteinSequenceInput(**arguments)

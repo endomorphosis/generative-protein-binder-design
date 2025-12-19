@@ -4,6 +4,22 @@
 
 This guide provides detailed instructions for installing AlphaFold2, RFDiffusion, and ProteinMPNN natively on ARM64 systems. This approach avoids Docker container platform compatibility issues but requires significant technical expertise and time investment.
 
+## NIM-Compatible Local Services (Recommended integration)
+
+If you want the Docker dashboard/MCP server stack to route to your **host-native** AlphaFold2 + RFdiffusion installs (no shims), this repo includes small NIM-compatible HTTP wrappers.
+
+- Start the host-native services:
+    - `./scripts/run_arm64_native_model_services.sh`
+    - This runs `native_services.alphafold_service` on `:18081` and `native_services.rfdiffusion_service` on `:18082`.
+    - You must set:
+        - `ALPHAFOLD_NATIVE_CMD` (must produce `{out_dir}/result.pdb`)
+        - `RFDIFFUSION_NATIVE_CMD` (must produce `{out_dir}/design_{design_id}.pdb`)
+
+- Start the dashboard stack that routes to those host-native services:
+    - `./scripts/run_dashboard_stack.sh --arm64-host-native up -d --build`
+
+This mode removes the “CI-only shim” containers from the critical path by pointing the MCP server at your real local installs via `http://host.docker.internal:18081` and `:18082`.
+
 ⚠️ **Warning:** Native installation is complex and may take several days to complete. It requires:
 - Deep understanding of Python environments and dependency management
 - Experience compiling software from source

@@ -20,7 +20,10 @@ def health_ready():
     if not getattr(rfdiffusion_runner, "is_ready", lambda: True)():
         raise HTTPException(
             status_code=503,
-            detail="RFDiffusion service not ready: real model/weights not available (or mock outputs disabled)",
+            detail=(
+                "RFDiffusion service not ready: ARM64 container is a CI-only shim (no real inference). "
+                "Configure a real provider via MCP Dashboard (External/NIM) or deploy native RFdiffusion."
+            ),
         )
     return {"status": "ready"}
 

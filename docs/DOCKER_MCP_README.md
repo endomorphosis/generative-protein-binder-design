@@ -87,6 +87,24 @@ The Docker compose dashboard stacks mount a named volume and set `MCP_CONFIG_PAT
 
 For embedded provider downloads, the stacks also mount a persistent `/models` volume, so any downloaded model assets (like ProteinMPNN source/weights) can be reused across restarts.
 
+### AlphaFold DB options (local staged download vs external/NIM)
+
+You have two supported ways to use **full** AlphaFold databases:
+
+1) **Download locally (staged install)**
+   - In the Dashboard **Settings → Embedded**, configure:
+     - `AlphaFold DB URL (reduced / initial)`
+     - `AlphaFold DB URL (full extras, optional)`
+   - Enable `allow auto-download`, and either click **Download embedded assets** or enable background startup bootstrap via:
+     - `MCP_EMBEDDED_AUTO_DOWNLOAD=1`
+     - `MCP_BOOTSTRAP_ON_STARTUP=1`
+   - The server downloads the reduced pack first and continues with the full extras pack in the background.
+   - Progress appears in the existing **Service Status** banner via the `reason` field.
+
+2) **Point AlphaFold to a model service that already has the DBs**
+   - In the Dashboard **Settings → External URLs** (or NIM URLs), set the AlphaFold endpoint to a container/service you run elsewhere.
+   - That service is responsible for hosting/mounting the full databases. This is the recommended approach when DBs live in a dedicated model-serving container or remote cluster.
+
 ### Multi-platform (one command)
 
 Use the helper script below to start the correct dashboard stack for your machine:
@@ -111,6 +129,18 @@ To run the AMD64 NIM stack on ARM64 via emulation (qemu/binfmt), use:
 ```bash
 ./scripts/run_dashboard_stack.sh --emulated up -d
 ```
+
+### DGX Spark: dashboard + server only (control plane)
+
+When AlphaFold/RFDiffusion/Multimer run in separate containers or on remote infrastructure, you can run just the MCP server + dashboard on DGX Spark and configure provider URLs in the dashboard.
+
+```bash
+docker compose -f deploy/docker-compose-dashboard-dgx-spark.yaml up -d --build
+```
+
+Then use **Settings** to either:
+- Point **External URLs** / **NIM URLs** at services that already host full databases, or
+- Configure **Embedded downloads** to stage reduced → full AlphaFold DBs locally under `/models`.
 
 ### Publish multi-arch core images (MCP server + dashboard)
 
@@ -317,9 +347,9 @@ docker compose -f deploy/docker-compose-dashboard-arm64-native.yaml up -d --buil
 ```
 
 Notes:
-- By default, mock/fallback model outputs are disabled (only enabled when `ALLOW_MOCK_OUTPUTS=1` or in CI).
+- Mock/fallback model outputs are CI-only (enabled when `CI=1`).
 - The ARM64 ProteinMPNN service includes the upstream ProteinMPNN code + weights and can run “real weights” in-container.
-- The ARM64 AlphaFold2 and RFDiffusion services are stubs unless you provide real installations; they will report `not_ready` when mocks are disabled.
+- The ARM64 AlphaFold2 and RFDiffusion services are CI-only API shims and will report `not_ready` in runtime. For real inference, configure External/NIM endpoints in the dashboard or use a native install.
 
 ### Option 3: Development Mode
 ```bash
