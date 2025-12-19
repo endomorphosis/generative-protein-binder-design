@@ -20,7 +20,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "${CYAN}[STEP]${NC} $1"; }
 
 # Default options
-DB_TIER="reduced"
+DB_TIER="minimal"
 GPU_MODE="auto"
 FORCE_INSTALL=false
 CONDA_ENV="alphafold2"
@@ -41,7 +41,7 @@ AlphaFold2 Complete Installation Script
 Usage: $0 [OPTIONS]
 
 Options:
-  --db-tier TIER        Database tier: minimal, reduced, full (default: reduced)
+    --db-tier TIER        Database tier: minimal, reduced, full (default: minimal)
                         minimal  = 5GB (models only, demo quality)
                         reduced  = 50GB (small BFD, 70-80% accuracy)
                         full     = 2.3TB (complete databases, 100% accuracy)
@@ -59,15 +59,12 @@ Examples:
 
   # Recommended for development (50GB, auto GPU)
   $0 --db-tier reduced
-
-  # Full production installation (2.3TB, GPU required)
-  $0 --db-tier full --gpu cuda
-
 EOF
 }
 
+# Parse arguments
 while [[ $# -gt 0 ]]; do
-    case $1 in
+    case "$1" in
         --db-tier)
             DB_TIER="$2"
             shift 2
@@ -92,7 +89,7 @@ while [[ $# -gt 0 ]]; do
             SKIP_VALIDATION=true
             shift
             ;;
-        --help)
+        --help|-h)
             show_help
             exit 0
             ;;
@@ -131,7 +128,18 @@ log_info "Platform: $OS $ARCH"
 # Check disk space
 check_disk_space() {
     local required=$1
-    local available=$(df -BG "$DATA_DIR" 2>/dev/null | awk 'NR==2 {print $4}' | sed 's/G//' || echo "1000")
+    mkdir -p "$DATA_DIR" 2>/dev/null || true
+    local df_target="$DATA_DIR"
+    if [[ ! -d "$df_target" ]]; then
+        df_target="$HOME"
+    fi
+    local available
+    available=$(df -BG "$df_target" 2>/dev/null | awk 'NR==2 {print $4}' | sed 's/G//' || true)
+    if [[ -z "${available:-}" ]] || ! [[ "$available" =~ ^[0-9]+$ ]]; then
+        # If df parsing fails for any reason, don't crash; just warn and continue.
+        log_warning "Could not parse available disk space for '$df_target'; continuing without strict check"
+        return 0
+    fi
     
     if [ "$available" -lt "$required" ]; then
         log_error "Insufficient disk space: ${available}GB available, ${required}GB required"
@@ -281,6 +289,18 @@ detect_gpu() {
 GPU_TYPE=$(detect_gpu)
 log_info "GPU mode: $GPU_TYPE"
 
+# On Linux ARM64, CUDA-enabled jaxlib wheels are generally not available.
+# If a GPU is present, auto-detection may select "cuda" via nvidia-smi, but the
+# installation would still fall back to CPU (or fail). Prefer CPU for out-of-box.
+if [[ "$OS" == "Linux" ]] && [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]] && [[ "$GPU_TYPE" == "cuda" ]]; then
+    if [[ "$GPU_MODE" == "cuda" ]]; then
+        log_error "CUDA was requested, but CUDA-enabled jaxlib wheels are not supported on $OS $ARCH in this installer. Use --gpu cpu."
+        exit 1
+    fi
+    log_warning "CUDA detected on $OS $ARCH, but CUDA-enabled jaxlib wheels are not available; using CPU JAX."
+    GPU_TYPE="cpu"
+fi
+
 # Step 4: Install Python dependencies
 log_step "Step 4/8: Installing Python dependencies"
 
@@ -290,21 +310,39 @@ mamba install -y -q numpy scipy pandas matplotlib biopython jupyter
 log_info "Installing JAX..."
 case $GPU_TYPE in
     cuda)
-        pip install -q --upgrade "jax[cuda12]" jaxlib
+        # Match upstream AlphaFold requirements (tools/alphafold2/requirements.txt).
+        # Use the CUDA12 wheel index for jaxlib.
+        pip install -q --upgrade "jax==0.4.26" "jaxlib==0.4.26+cuda12.cudnn89" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
         ;;
     metal|cpu)
-        pip install -q --upgrade "jax[cpu]"
+        # Prefer conda-forge builds for broad architecture support.
+        mamba install -y -q "jax=0.4.26" "jaxlib=0.4.26"
         ;;
 esac
 
+# Keep pip from upgrading JAX/JAXLIB when installing other deps.
+AF_CONSTRAINTS_FILE="/tmp/alphafold2_constraints_${CONDA_ENV}.txt"
+cat > "$AF_CONSTRAINTS_FILE" <<'EOF'
+jax==0.4.26
+jaxlib==0.4.26
+EOF
+
 log_info "Installing AlphaFold dependencies..."
-pip install -q \
-    dm-haiku==0.0.10 \
-    ml-collections==0.1.1 \
-    absl-py==1.4.0 \
+pip install -q -c "$AF_CONSTRAINTS_FILE" \
+    dm-haiku==0.0.12 \
+    ml-collections==0.1.0 \
+    absl-py==1.0.0 \
     immutabledict==2.2.3 \
-    chex==0.1.82 \
     dm-tree==0.1.8
+
+# Sanity check: ensure JAX pin actually held (Haiku expects older JAX APIs).
+python - <<'PY'
+import jax, jaxlib
+expected = '0.4.26'
+if jax.__version__ != expected or jaxlib.__version__ != expected:
+    raise SystemExit(f"Expected jax/jaxlib {expected}, got jax={jax.__version__} jaxlib={jaxlib.__version__}")
+print(f"Pinned jax/jaxlib OK: {jax.__version__}")
+PY
 
 log_success "Python dependencies installed"
 
@@ -338,42 +376,35 @@ log_step "Step 6/8: Downloading model parameters"
 mkdir -p "$DATA_DIR/params"
 
 download_alphafold_params() {
-    local base_url="https://storage.googleapis.com/alphafold"
-    local version="alphafold_params_2022-12-06"
-    
-    log_info "Downloading AlphaFold model parameters..."
-    
-    local models=(
-        "params_model_1.npz"
-        "params_model_2.npz"
-        "params_model_3.npz"
-        "params_model_4.npz"
-        "params_model_5.npz"
-        "params_model_1_ptm.npz"
-        "params_model_2_ptm.npz"
-        "params_model_3_ptm.npz"
-        "params_model_4_ptm.npz"
-        "params_model_5_ptm.npz"
-    )
-    
-    for model in "${models[@]}"; do
-        local url="$base_url/$version/$model"
-        local dest="$DATA_DIR/params/$model"
-        
-        if [ -f "$dest" ]; then
-            log_info "  ✓ $model (already exists)"
-        else
-            log_info "  Downloading $model..."
-            wget -q --show-progress -c "$url" -O "$dest" || {
-                log_warning "  Failed to download $model"
-                rm -f "$dest"
-            }
-        fi
-    done
+    # The individual .npz URLs are now commonly blocked (HTTP 403) in some environments.
+    # The official tarball remains accessible.
+    local url="https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar"
+    local tar_path="$DATA_DIR/params/alphafold_params_2022-12-06.tar"
+
+    if ls "$DATA_DIR/params"/*.npz >/dev/null 2>&1; then
+        log_info "  ✓ params already present (*.npz)"
+        return 0
+    fi
+
+    log_info "Downloading AlphaFold model parameters (tarball)..."
+    wget -q --show-progress -c "$url" -O "$tar_path" || {
+        log_error "Failed to download AlphaFold params tarball"
+        return 1
+    }
+    tar -xf "$tar_path" -C "$DATA_DIR/params" || {
+        log_error "Failed to extract AlphaFold params tarball"
+        return 1
+    }
+    rm -f "$tar_path" || true
+
+    if ! ls "$DATA_DIR/params"/*.npz >/dev/null 2>&1; then
+        log_error "Params extraction completed, but no .npz files were found"
+        return 1
+    fi
 }
 
 download_alphafold_params
-log_success "Model parameters downloaded"
+log_success "Model parameters present"
 
 # Step 7: Download databases based on tier
 log_step "Step 7/8: Downloading databases (tier: $DB_TIER)"
@@ -400,10 +431,100 @@ download_databases() {
             
             # Download MGnify
             log_info "  Downloading MGnify..."
-            if [ ! -f "$DATA_DIR/databases/mgy_clusters.fa" ]; then
-                wget -c "https://storage.googleapis.com/alphafold-databases/reduced_dbs/mgy_clusters_2022_05.fa.gz" \
-                    -O "$DATA_DIR/databases/mgy_clusters_2022_05.fa.gz" || \
+            if [ ! -f "$DATA_DIR/databases/mgy_clusters_2022_05.fa.gz" ]; then
+                MGNIFY_URL="${ALPHAFOLD_MGNIFY_URL:-https://storage.googleapis.com/alphafold-databases/reduced_dbs/mgy_clusters_2022_05.fa.gz}"
+                if wget -c "$MGNIFY_URL" -O "$DATA_DIR/databases/mgy_clusters_2022_05.fa.gz"; then
+                    log_info "  ✓ MGnify downloaded"
+                else
                     log_warning "MGnify download failed"
+
+                    # Optional fallback: build a small substitute FASTA from HuggingFace.
+                    # This is not the official MGnify cluster DB; it is a best-effort way
+                    # to unblock restricted environments for demo/bring-up.
+                    if [ "${ALPHAFOLD_MGNIFY_FALLBACK:-none}" = "huggingface" ]; then
+                        log_info "  Attempting HuggingFace fallback (datasets-server API)..."
+                                                if MGNIFY_OUT_PATH="$DATA_DIR/databases/mgy_clusters_2022_05.fa.gz" \
+                                                    ALPHAFOLD_MGNIFY_HF_DATASET="${ALPHAFOLD_MGNIFY_HF_DATASET:-tattabio/OMG_prot50}" \
+                                                    ALPHAFOLD_MGNIFY_HF_TOKEN="${ALPHAFOLD_MGNIFY_HF_TOKEN:-}" \
+                                                    ALPHAFOLD_MGNIFY_HF_MAX_SEQS="${ALPHAFOLD_MGNIFY_HF_MAX_SEQS:-200000}" \
+                                                    ALPHAFOLD_MGNIFY_HF_PAGE_SIZE="${ALPHAFOLD_MGNIFY_HF_PAGE_SIZE:-1000}" \
+                                                    python - <<'PY'
+import gzip
+import json
+import os
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+dataset = (os.environ.get('ALPHAFOLD_MGNIFY_HF_DATASET') or 'tattabio/OMG_prot50').strip()
+token = (os.environ.get('ALPHAFOLD_MGNIFY_HF_TOKEN') or '').strip()
+out_path = os.environ['MGNIFY_OUT_PATH']
+
+target_sequences = int(os.environ.get('ALPHAFOLD_MGNIFY_HF_MAX_SEQS') or '200000')
+page_size = int(os.environ.get('ALPHAFOLD_MGNIFY_HF_PAGE_SIZE') or '1000')
+page_size = max(1, min(5000, page_size))
+
+headers = {}
+if token:
+    headers['Authorization'] = f'Bearer {token}'
+
+def fetch_rows(offset: int, length: int):
+    params = {
+        'dataset': dataset,
+        'config': 'default',
+        'split': 'train',
+        'offset': offset,
+        'length': length,
+    }
+    url = 'https://datasets-server.huggingface.co/rows?' + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+written = 0
+offset = 0
+tmp_path = out_path + '.tmp'
+os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+with gzip.open(tmp_path, 'wt', encoding='utf-8') as f:
+    while written < target_sequences:
+        n = min(page_size, target_sequences - written)
+        data = fetch_rows(offset, n)
+        rows = data.get('rows') or []
+        if not rows:
+            break
+        for item in rows:
+            row = item.get('row') or {}
+            seq_id = str(row.get('id') or f'row_{offset}')
+            seq = (row.get('sequence') or '').strip()
+            if not seq:
+                continue
+            f.write('>' + seq_id + '\n')
+            # wrap at 60 chars
+            for i in range(0, len(seq), 60):
+                f.write(seq[i:i+60] + '\n')
+            written += 1
+            if written >= target_sequences:
+                break
+        offset += len(rows)
+        if len(rows) < n:
+            break
+        # be polite to the public API
+        time.sleep(0.1)
+
+os.replace(tmp_path, out_path)
+print(f'Wrote {written} sequences to {out_path}', file=sys.stderr)
+if written < 1000:
+    raise SystemExit('Too few sequences fetched from HuggingFace; aborting')
+PY
+                        then
+                          log_info "  ✓ HuggingFace fallback generated mgy_clusters_2022_05.fa.gz"
+                        else
+                          log_warning "HuggingFace fallback failed; MGnify still missing"
+                        fi
+                    fi
+                fi
             fi
             
             # Download PDB70
@@ -414,6 +535,19 @@ download_databases() {
                     -O /tmp/pdb70.tar.gz || log_warning "PDB70 download failed"
                 [ -f /tmp/pdb70.tar.gz ] && tar -xzf /tmp/pdb70.tar.gz -C "$DATA_DIR/databases/" && rm /tmp/pdb70.tar.gz
             fi
+
+                # Download UniRef30 (required for --db_preset=reduced_dbs)
+                log_info "  Downloading UniRef30..."
+                if [ ! -f "$DATA_DIR/databases/UniRef30_2021_03.tar.gz" ]; then
+                    wget -c "https://storage.googleapis.com/alphafold-databases/v2.3/UniRef30_2021_03.tar.gz" \
+                        -O "$DATA_DIR/databases/UniRef30_2021_03.tar.gz" || \
+                        log_warning "UniRef30 download failed"
+                fi
+                if [ -f "$DATA_DIR/databases/UniRef30_2021_03.tar.gz" ] && [ ! -d "$DATA_DIR/databases/uniref30" ]; then
+                    mkdir -p "$DATA_DIR/databases/uniref30"
+                    tar -xzf "$DATA_DIR/databases/UniRef30_2021_03.tar.gz" -C "$DATA_DIR/databases/uniref30" || \
+                        log_warning "UniRef30 extract failed"
+                fi
             
             echo "tier=reduced" > "$DATA_DIR/.tier"
             log_success "Reduced databases downloaded"

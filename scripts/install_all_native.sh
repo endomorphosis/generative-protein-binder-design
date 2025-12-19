@@ -21,7 +21,7 @@ log_step() { echo -e "${CYAN}[STEP]${NC} $1"; }
 log_header() { echo -e "${MAGENTA}$1${NC}"; }
 
 # Default options
-DB_TIER="reduced"
+DB_TIER="minimal"
 GPU_MODE="auto"
 INSTALL_ALPHAFOLD=true
 INSTALL_RFDIFFUSION=true

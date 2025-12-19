@@ -255,17 +255,77 @@ log_info "GPU mode: $GPU_TYPE"
 log_step "Step 4/7: Installing PyTorch"
 
 log_info "Installing PyTorch for $GPU_TYPE..."
+
+install_torch_with_fallbacks() {
+    local index_url="$1"
+    shift
+    local versions=("$@")
+
+    for v in "${versions[@]}"; do
+        if [[ -z "$v" ]]; then
+            continue
+        fi
+        log_info "Trying torch==$v ($index_url)"
+        if pip install -q "torch==${v}" --index-url "$index_url"; then
+            # Keep torchvision/torchaudio aligned without letting pip upgrade torch.
+            case "$v" in
+                2.0.1)
+                    pip install -q "torchvision==0.15.2" "torchaudio==2.0.2" --no-deps --index-url "$index_url" || true
+                    ;;
+                2.0.0)
+                    pip install -q "torchvision==0.15.1" "torchaudio==2.0.1" --no-deps --index-url "$index_url" || true
+                    ;;
+                *)
+                    # Best effort for other versions.
+                    pip install -q torchvision torchaudio --no-deps --index-url "$index_url" || true
+                    ;;
+            esac
+            return 0
+        fi
+    done
+    return 1
+}
+
+ARCH=$(uname -m)
 case $GPU_TYPE in
     cuda)
-        pip install -q torch==2.1.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+        # CUDA wheels availability varies by architecture. Prefer cu121, but fall back.
+        if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+            # aarch64 often lags behind x86_64 in PyTorch wheel availability.
+            install_torch_with_fallbacks "https://download.pytorch.org/whl/cu121" \
+                "${TORCH_VERSION:-2.1.0}" 2.0.1 2.0.0 || {
+                log_warning "CUDA torch wheels not available; falling back to CPU wheels"
+                install_torch_with_fallbacks "https://download.pytorch.org/whl/cpu" 2.1.0 2.0.1 2.0.0 || true
+            }
+        else
+            install_torch_with_fallbacks "https://download.pytorch.org/whl/cu121" "${TORCH_VERSION:-2.1.0}" 2.1.0 2.0.1 2.0.0
+        fi
         ;;
     metal)
-        pip install -q torch==2.1.0 torchvision torchaudio
+        install_torch_with_fallbacks "https://pypi.org/simple" "${TORCH_VERSION:-2.1.0}" 2.1.0 2.0.1 2.0.0
         ;;
     cpu)
-        pip install -q torch==2.1.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        install_torch_with_fallbacks "https://download.pytorch.org/whl/cpu" "${TORCH_VERSION:-2.1.0}" 2.1.0 2.0.1 2.0.0
         ;;
 esac
+
+python -c 'import torch; print(torch.__version__)' >/dev/null 2>&1 || {
+    log_error "PyTorch installation failed (no importable torch)"
+    exit 1
+}
+
+# Create a constraints file so later pip installs do not upgrade torch.
+TORCH_VERSION_FULL="$(python - <<'PY'
+import re, torch
+m = re.match(r'^(\d+\.\d+\.\d+)', torch.__version__)
+print(m.group(1) if m else torch.__version__)
+PY
+)"
+CONSTRAINTS_FILE="/tmp/rfdiffusion_constraints_${CONDA_ENV}.txt"
+cat > "$CONSTRAINTS_FILE" <<EOF
+torch==${TORCH_VERSION_FULL}
+EOF
+log_info "Pinned torch version in constraints: $TORCH_VERSION_FULL"
 
 log_success "PyTorch installed"
 
@@ -297,11 +357,13 @@ cd "$RFDIFFUSION_DIR/RFdiffusion"
 
 # Install dependencies
 log_info "Installing RFDiffusion dependencies..."
-pip install -q \
+pip install -q -c "$CONSTRAINTS_FILE" \
     numpy \
     scipy \
     pandas \
     biopython \
+    pillow \
+    requests \
     pytorch-lightning \
     hydra-core \
     pyrsistent \
@@ -309,26 +371,23 @@ pip install -q \
     e3nn \
     omegaconf
 
-# Install RFDiffusion in development mode
-pip install -q -e .
+# Install RFDiffusion in development mode.
+# RFdiffusion declares a dependency on "se3-transformer" which is not published on PyPI.
+# We install SE3Transformer from git below, so avoid pip trying (and failing) to resolve it.
+pip install -q -e . --no-deps
 
 log_success "RFDiffusion installed"
 
 # Install SE3 Transformer
 log_info "Installing SE3 Transformer..."
-SE3_DIR="$TOOLS_DIR/se3_transformer"
-mkdir -p "$SE3_DIR"
-
-if [ -d "$SE3_DIR/SE3Transformer" ]; then
-    cd "$SE3_DIR/SE3Transformer"
-    git pull -q || true
-else
-    cd "$SE3_DIR"
-    git clone -q https://github.com/RosettaCommons/SE3Transformer.git
-    cd SE3Transformer
+SE3_LOCAL_DIR="$RFDIFFUSION_DIR/RFdiffusion/env/SE3Transformer"
+if [ ! -d "$SE3_LOCAL_DIR" ]; then
+    log_error "Expected vendored SE3Transformer at: $SE3_LOCAL_DIR"
+    log_error "Your RFdiffusion checkout may be incomplete. Re-run with --force."
+    exit 1
 fi
 
-pip install -q -e .
+pip install -q -e "$SE3_LOCAL_DIR"
 log_success "SE3 Transformer installed"
 
 # Step 6: Download model weights
@@ -337,31 +396,26 @@ log_step "Step 6/7: Downloading model weights"
 mkdir -p "$MODELS_DIR"
 
 download_models() {
-    local base_url="https://files.ipd.uw.edu/pub/RFdiffusion"
-    
-    local models=(
-        "Base_ckpt.pt"
-        "Complex_base_ckpt.pt"
-        "Complex_beta_ckpt.pt"
-    )
-    
-    log_info "Downloading RFDiffusion model weights (~3GB)..."
-    
-    for model in "${models[@]}"; do
-        local url="$base_url/$model"
-        local dest="$MODELS_DIR/$model"
-        
-        if [ -f "$dest" ] && [ -s "$dest" ]; then
-            log_info "  ✓ $model (already exists)"
-        else
-            log_info "  Downloading $model..."
-            wget -q --show-progress -c "$url" -O "$dest" || {
-                log_warning "  Failed to download $model"
-                log_info "    You may need to download manually from: $url"
-                rm -f "$dest"
-            }
-        fi
-    done
+    log_info "Downloading RFDiffusion model weights..."
+
+    local download_script="$RFDIFFUSION_DIR/RFdiffusion/scripts/download_models.sh"
+    if [ -x "$download_script" ]; then
+        bash "$download_script" "$MODELS_DIR" || log_warning "Model download script failed"
+    else
+        log_warning "RFdiffusion download_models.sh not found/executable at: $download_script"
+    fi
+
+    # Optional checkpoint used by some workflows.
+    local optional_url="http://files.ipd.uw.edu/pub/RFdiffusion/f572d396fae9206628714fb2ce00f72e/Complex_beta_ckpt.pt"
+    local optional_dest="$MODELS_DIR/Complex_beta_ckpt.pt"
+    if [ ! -s "$optional_dest" ]; then
+        log_info "  Downloading optional Complex_beta_ckpt.pt..."
+        wget -q --show-progress -c "$optional_url" -O "$optional_dest" || {
+            log_warning "  Failed to download Complex_beta_ckpt.pt"
+            log_info "    You may need to download manually from: $optional_url"
+            rm -f "$optional_dest"
+        }
+    fi
 }
 
 download_models
@@ -526,17 +580,19 @@ log_success "Wrapper scripts created"
 # Run validation
 if [ "$SKIP_VALIDATION" = false ]; then
     log_info "Running validation tests..."
-    source "$RFDIFFUSION_DIR/activate.sh"
-    python "$RFDIFFUSION_DIR/validate.py" || log_warning "Validation had warnings"
+    RFDIFFUSION_INSTALL_ROOT="$RFDIFFUSION_DIR"
+    source "$RFDIFFUSION_INSTALL_ROOT/activate.sh"
+    python "$RFDIFFUSION_INSTALL_ROOT/validate.py" || log_warning "Validation had warnings"
 fi
 
 # Create environment file for MCP server integration
-cat > "$RFDIFFUSION_DIR/.env" << EOF
+RFDIFFUSION_INSTALL_ROOT="${RFDIFFUSION_INSTALL_ROOT:-$RFDIFFUSION_DIR}"
+cat > "$RFDIFFUSION_INSTALL_ROOT/.env" << EOF
 RFDIFFUSION_CONDA_ENV=$CONDA_ENV
-RFDIFFUSION_DIR=$RFDIFFUSION_DIR/RFdiffusion
+RFDIFFUSION_DIR=$RFDIFFUSION_INSTALL_ROOT/RFdiffusion
 RFDIFFUSION_MODELS=$MODELS_DIR
 RFDIFFUSION_GPU_TYPE=$GPU_TYPE
-RFDIFFUSION_NATIVE_CMD=$RFDIFFUSION_DIR/run_rfdiffusion.sh inference.input_pdb={target_pdb} inference.output_prefix={out_dir}/design_{design_id} inference.num_designs=1
+RFDIFFUSION_NATIVE_CMD=$RFDIFFUSION_INSTALL_ROOT/run_rfdiffusion.sh inference.input_pdb={target_pdb} inference.output_prefix={out_dir}/design_{design_id} inference.num_designs=1
 EOF
 
 # Final success message
@@ -552,11 +608,11 @@ echo "  Models: $MODELS_DIR"
 echo "  GPU Support: $GPU_TYPE"
 echo ""
 echo "To use RFDiffusion:"
-echo "  1. Activate: source $RFDIFFUSION_DIR/activate.sh"
-echo "  2. Run: $RFDIFFUSION_DIR/run_rfdiffusion.sh 'contigmap.contigs=[50-50]'"
-echo "  3. Validate: python $RFDIFFUSION_DIR/validate.py"
+echo "  1. Activate: source $RFDIFFUSION_INSTALL_ROOT/activate.sh"
+echo "  2. Run: $RFDIFFUSION_INSTALL_ROOT/run_rfdiffusion.sh 'contigmap.contigs=[50-50]'"
+echo "  3. Validate: python $RFDIFFUSION_INSTALL_ROOT/validate.py"
 echo ""
 echo "MCP Server Integration:"
-echo "  Configuration saved to: $RFDIFFUSION_DIR/.env"
-echo "  Import with: export \$(cat $RFDIFFUSION_DIR/.env | xargs)"
+echo "  Configuration saved to: $RFDIFFUSION_INSTALL_ROOT/.env"
+echo "  Import with: export \$(cat $RFDIFFUSION_INSTALL_ROOT/.env | xargs)"
 echo ""

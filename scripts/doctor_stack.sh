@@ -60,6 +60,36 @@ info "Compose file: $COMPOSE_FILE"
 info "Dashboard URL: http://localhost:${MCP_DASHBOARD_HOST_PORT}"
 info "MCP Server URL: http://localhost:${MCP_SERVER_HOST_PORT}"
 
+if [[ "$COMPOSE_FILE" == *"docker-compose-dashboard.yaml" ]]; then
+  echo
+  info "Checking NIM prerequisites..."
+  if [[ -z "${NGC_CLI_API_KEY:-}" ]]; then
+    err "NGC_CLI_API_KEY is not set (required to pull NIM containers)"
+    echo "Set it with: export NGC_CLI_API_KEY='<YOUR_KEY>'"
+  else
+    ok "NGC_CLI_API_KEY is set"
+  fi
+
+  NIM_CACHE_PATH="${HOST_NIM_CACHE:-$HOME/.cache/nim}"
+  if [[ -z "${HOST_NIM_CACHE:-}" ]]; then
+    warn "HOST_NIM_CACHE is not set; defaulting to $NIM_CACHE_PATH"
+  else
+    ok "HOST_NIM_CACHE is set: $HOST_NIM_CACHE"
+  fi
+
+  if [[ -d "$NIM_CACHE_PATH" ]]; then
+    if [[ -w "$NIM_CACHE_PATH" ]]; then
+      ok "NIM cache directory exists and is writable: $NIM_CACHE_PATH"
+    else
+      err "NIM cache directory exists but is not writable: $NIM_CACHE_PATH"
+      echo "Fix with: sudo chmod -R 777 '$NIM_CACHE_PATH'"
+    fi
+  else
+    warn "NIM cache directory does not exist yet: $NIM_CACHE_PATH"
+    echo "Create with: mkdir -p '$NIM_CACHE_PATH' && chmod -R 777 '$NIM_CACHE_PATH'"
+  fi
+fi
+
 if [[ -n "${MCP_SERVER_URL:-}" ]] && [[ "$MCP_SERVER_URL" != "http://localhost:${MCP_SERVER_HOST_PORT}" ]]; then
   warn "MCP_SERVER_URL is set to '$MCP_SERVER_URL' (may override stack server URL http://localhost:${MCP_SERVER_HOST_PORT})"
 fi

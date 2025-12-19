@@ -24,12 +24,35 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ALPHAFOLD_PORT="${ALPHAFOLD_NATIVE_PORT:-18081}"
 RFDIFFUSION_PORT="${RFDIFFUSION_NATIVE_PORT:-18082}"
 
+maybe_source_env_file() {
+  local env_file="$1"
+  if [[ -f "$env_file" ]]; then
+    # shellcheck disable=SC1090
+    set -a
+    source "$env_file"
+    set +a
+  fi
+}
+
+# If the user didn't provide command templates, try to auto-load the ones
+# produced by our "zero-touch" installers.
+if [[ -z "${ALPHAFOLD_NATIVE_CMD:-}" ]]; then
+  maybe_source_env_file "$ROOT_DIR/tools/alphafold2/.env"
+fi
+if [[ -z "${RFDIFFUSION_NATIVE_CMD:-}" ]]; then
+  maybe_source_env_file "$ROOT_DIR/tools/rfdiffusion/.env"
+  # Backward compatibility: older installers wrote the .env under RFdiffusion/.
+  maybe_source_env_file "$ROOT_DIR/tools/rfdiffusion/RFdiffusion/.env"
+fi
+
 if [[ -z "${ALPHAFOLD_NATIVE_CMD:-}" ]]; then
   echo "ERR: ALPHAFOLD_NATIVE_CMD is not set" >&2
+  echo "Hint: run ./scripts/install_alphafold2_complete.sh (it writes tools/alphafold2/.env)" >&2
   exit 2
 fi
 if [[ -z "${RFDIFFUSION_NATIVE_CMD:-}" ]]; then
   echo "ERR: RFDIFFUSION_NATIVE_CMD is not set" >&2
+  echo "Hint: run ./scripts/install_rfdiffusion_complete.sh (it writes tools/rfdiffusion/.env)" >&2
   exit 2
 fi
 

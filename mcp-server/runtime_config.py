@@ -221,6 +221,17 @@ class EmbeddedDownloads(BaseModel):
     # Subdirectory under model_dir to place/extract databases.
     alphafold_db_subdir: str = "alphafold_db"
 
+    # AlphaFold2 / MGnify
+    # Some environments block the default MGnify download (HTTP 403). These settings
+    # allow users to provide an alternate URL (e.g., a signed URL or internal mirror)
+    # or opt into a HuggingFace-backed fallback.
+    alphafold_mgnify_url: Optional[str] = None
+    alphafold_mgnify_fallback: Literal["none", "huggingface"] = "none"
+    alphafold_mgnify_hf_dataset: str = "tattabio/OMG_prot50"
+    # If set, this token may be persisted to disk alongside other runtime config.
+    # Prefer supplying via environment variables when possible.
+    alphafold_mgnify_hf_token: Optional[str] = None
+
 
 class RunnerCommand(BaseModel):
     """A command template (argv) for running a model inside the MCP container.
@@ -274,7 +285,7 @@ class RoutingConfig(BaseModel):
     primary: ProviderName = "nim"
 
     # Used when mode == "fallback"; order to try.
-    order: List[ProviderName] = Field(default_factory=lambda: ["embedded", "nim", "external"])
+    order: List[ProviderName] = Field(default_factory=lambda: ["nim", "external", "embedded"])
 
 
 class MCPServerConfig(BaseModel):

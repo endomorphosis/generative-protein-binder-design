@@ -14,6 +14,16 @@ For real workflows on ARM64 (DGX Spark), you have two practical options:
 1) **Native install on the host** (recommended for DGX Spark): install the tools + assets on the machine and run the MCP server in `MODEL_BACKEND=native`/`hybrid`.
 2) **Remote provider**: run real model services elsewhere (NIM or your own containers in the cloud) and configure them via the MCP Dashboard (**Backend Settings** → External/NIM URLs).
 
+If you're using the **ARM64 host-native dashboard stack** (deploy/docker-compose-dashboard-arm64-host-native.yaml), the simplest path is:
+
+```bash
+./scripts/provision_arm64_host_native_models.sh --db-tier reduced
+./scripts/run_arm64_native_model_services.sh
+./scripts/start_everything.sh --arm64-host-native
+```
+
+The provisioner uses the existing "complete" installers and will download weights/DBs and write integration env files under `tools/*/.env`.
+
 Why this matters for ARM64: some upstream ML stacks assume x86_64-only prebuilt wheels/binaries (or are painful to build for aarch64 with CUDA). For scientists, the goal is to provide either a native installer or a remote endpoint with simple dashboard configuration.
 
 To use real model weights for production workloads, you have two options:

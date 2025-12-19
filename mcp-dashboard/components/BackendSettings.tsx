@@ -29,6 +29,12 @@ type EmbeddedConfig = {
     alphafold_db_url: string | null
     alphafold_db_url_full: string | null
     alphafold_db_subdir: string
+
+    // AlphaFold2 / MGnify (optional; used by installers / embedded provisioning)
+    alphafold_mgnify_url: string | null
+    alphafold_mgnify_fallback: 'none' | 'huggingface'
+    alphafold_mgnify_hf_dataset: string
+    alphafold_mgnify_hf_token: string | null
   }
   runners: {
     alphafold: { argv: string[]; timeout_seconds: number }
@@ -92,6 +98,12 @@ function normalizeConfig(raw: any): MCPServerConfig {
         alphafold_db_url: cfg?.embedded?.downloads?.alphafold_db_url ?? null,
         alphafold_db_url_full: cfg?.embedded?.downloads?.alphafold_db_url_full ?? null,
         alphafold_db_subdir: cfg?.embedded?.downloads?.alphafold_db_subdir ?? 'alphafold_db',
+
+        alphafold_mgnify_url: cfg?.embedded?.downloads?.alphafold_mgnify_url ?? null,
+        alphafold_mgnify_fallback:
+          cfg?.embedded?.downloads?.alphafold_mgnify_fallback === 'huggingface' ? 'huggingface' : 'none',
+        alphafold_mgnify_hf_dataset: cfg?.embedded?.downloads?.alphafold_mgnify_hf_dataset ?? 'tattabio/OMG_prot50',
+        alphafold_mgnify_hf_token: cfg?.embedded?.downloads?.alphafold_mgnify_hf_token ?? null,
       },
       runners: {
         alphafold: ensureRunner(cfg?.embedded?.runners?.alphafold, { argv: [], timeout_seconds: 3600 }),
@@ -712,6 +724,119 @@ export default function BackendSettings() {
                                 placeholder="alphafold_db"
                               />
                             </label>
+
+                            <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 p-2 text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200">
+                              <div className="mb-1 font-semibold">MGnify (AlphaFold reduced DB)</div>
+                              <p className="text-[11px] text-gray-600 dark:text-gray-400">
+                                AlphaFold’s reduced DB tier downloads an MGnify cluster FASTA from Google Cloud Storage.
+                                In some networks this can return <span className="font-mono">403</span>.
+                              </p>
+                              <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] text-gray-600 dark:text-gray-400">
+                                <li>
+                                  If you have access via a mirror or signed URL, paste it below.
+                                </li>
+                                <li>
+                                  Otherwise, you can opt into a HuggingFace fallback dataset. This generates a smaller substitute FASTA to unblock installs (not the official MGnify cluster DB), and may reduce MSA coverage/accuracy.
+                                </li>
+                              </ul>
+
+                              <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                                MGnify URL override (mirror / signed URL)
+                                <input
+                                  disabled={!canEdit}
+                                  value={config.embedded.downloads.alphafold_mgnify_url ?? ''}
+                                  onChange={(e) =>
+                                    setConfig({
+                                      ...config,
+                                      embedded: {
+                                        ...config.embedded,
+                                        downloads: {
+                                          ...config.embedded.downloads,
+                                          alphafold_mgnify_url: e.target.value.trim() || null,
+                                        },
+                                      },
+                                    })
+                                  }
+                                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                  placeholder="https://.../mgy_clusters_2022_05.fa.gz"
+                                />
+                              </label>
+
+                              <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+                                <label className="text-xs text-gray-600 dark:text-gray-300">
+                                  Fallback
+                                  <select
+                                    disabled={!canEdit}
+                                    value={config.embedded.downloads.alphafold_mgnify_fallback}
+                                    onChange={(e) =>
+                                      setConfig({
+                                        ...config,
+                                        embedded: {
+                                          ...config.embedded,
+                                          downloads: {
+                                            ...config.embedded.downloads,
+                                            alphafold_mgnify_fallback:
+                                              e.target.value === 'huggingface' ? 'huggingface' : 'none',
+                                          },
+                                        },
+                                      })
+                                    }
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                                  >
+                                    <option value="none">none (default)</option>
+                                    <option value="huggingface">huggingface</option>
+                                  </select>
+                                </label>
+
+                                <label className="text-xs text-gray-600 dark:text-gray-300 md:col-span-2">
+                                  HuggingFace dataset
+                                  <input
+                                    disabled={!canEdit || config.embedded.downloads.alphafold_mgnify_fallback !== 'huggingface'}
+                                    value={config.embedded.downloads.alphafold_mgnify_hf_dataset}
+                                    onChange={(e) =>
+                                      setConfig({
+                                        ...config,
+                                        embedded: {
+                                          ...config.embedded,
+                                          downloads: {
+                                            ...config.embedded.downloads,
+                                            alphafold_mgnify_hf_dataset: e.target.value.trim() || 'tattabio/OMG_prot50',
+                                          },
+                                        },
+                                      })
+                                    }
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950"
+                                    placeholder="tattabio/OMG_prot50"
+                                  />
+                                </label>
+                              </div>
+
+                              <label className="mt-2 block text-xs text-gray-600 dark:text-gray-300">
+                                HuggingFace token (optional)
+                                <input
+                                  disabled={!canEdit || config.embedded.downloads.alphafold_mgnify_fallback !== 'huggingface'}
+                                  type="password"
+                                  value={config.embedded.downloads.alphafold_mgnify_hf_token ?? ''}
+                                  onChange={(e) =>
+                                    setConfig({
+                                      ...config,
+                                      embedded: {
+                                        ...config.embedded,
+                                        downloads: {
+                                          ...config.embedded.downloads,
+                                          alphafold_mgnify_hf_token: e.target.value.trim() || null,
+                                        },
+                                      },
+                                    })
+                                  }
+                                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950"
+                                  placeholder="hf_..."
+                                />
+                                <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                  Token can be created at huggingface.co/settings/tokens. Note: saving this here may persist it in the MCP config file.
+                                </p>
+                              </label>
+                            </div>
                           </div>
 
                           <div className="mt-2 rounded-md border border-gray-200 p-2 dark:border-gray-800">

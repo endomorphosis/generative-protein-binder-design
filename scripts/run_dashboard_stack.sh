@@ -118,6 +118,38 @@ case "$MODE" in
     ;;
 esac
 
+ensure_nim_prereqs() {
+  # Applies only to the AMD64 NIM stack.
+  if [[ "$COMPOSE_FILE" != *"docker-compose-dashboard.yaml" ]]; then
+    return 0
+  fi
+
+  if [[ -z "${NGC_CLI_API_KEY:-}" ]]; then
+    cat >&2 <<'EOF'
+NGC_CLI_API_KEY is required to pull and run the NIM model containers.
+
+Set it in your shell, then re-run:
+  export NGC_CLI_API_KEY="<YOUR_NGC_PERSONAL_RUN_KEY>"
+
+If you haven't logged in to nvcr.io yet:
+  echo "$NGC_CLI_API_KEY" | docker login nvcr.io --username='$oauthtoken' --password-stdin
+
+You can also run the guided setup:
+  ./scripts/setup_local.sh
+EOF
+    exit 2
+  fi
+
+  # Docker Compose doesn't reliably expand '~' in volume paths. Prefer an explicit path.
+  if [[ -z "${HOST_NIM_CACHE:-}" ]]; then
+    export HOST_NIM_CACHE="$HOME/.cache/nim"
+  fi
+
+  mkdir -p "$HOST_NIM_CACHE"
+  # NIM containers may run as a non-root user; they need RW access to the host cache.
+  chmod -R 777 "$HOST_NIM_CACHE" 2>/dev/null || true
+}
+
 if [[ "$MODE" == "emulated" ]] || ([[ "$MODE" == "auto" ]] && [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]] && [[ "$COMPOSE_FILE" == *docker-compose-dashboard.yaml ]]); then
   cat <<'EOF'
 NOTE: You are running the AMD64 NIM stack on an ARM64 host.
@@ -125,6 +157,16 @@ NOTE: You are running the AMD64 NIM stack on an ARM64 host.
 - Performance and stability may be significantly worse than native.
 If this fails, use:
   ./scripts/run_dashboard_stack.sh --arm64 up -d --build
+EOF
+fi
+
+ensure_nim_prereqs
+
+if [[ "$COMPOSE_FILE" == *"docker-compose-dashboard.yaml" ]] && [[ "${1:-}" == "up" ]]; then
+  cat <<'EOF'
+INFO: First start will download large model assets into HOST_NIM_CACHE.
+- AlphaFold2 / Multimer downloads can take hours (and require significant disk).
+- Subsequent restarts are much faster once cached.
 EOF
 fi
 

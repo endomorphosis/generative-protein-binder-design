@@ -24,7 +24,7 @@ services:
     ports:
       - "${ALPHAFOLD_HOST_PORT:-18081}:8000"
     volumes:
-      - ${HOST_NIM_CACHE:-~/.cache/nim}:/opt/nim/.cache/
+      - ${HOST_NIM_CACHE:-${HOME}/.cache/nim}:/opt/nim/.cache/
     environment:
       - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
@@ -40,7 +40,7 @@ services:
     ports:
       - "${RFDIFFUSION_HOST_PORT:-18082}:8000"
     volumes:
-      - ${HOST_NIM_CACHE:-~/.cache/nim}:/home/nvs/.cache/
+      - ${HOST_NIM_CACHE:-${HOME}/.cache/nim}:/home/nvs/.cache/
     environment:
       - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
@@ -55,7 +55,7 @@ services:
     ports:
       - "${PROTEINMPNN_HOST_PORT:-18083}:8000"
     volumes:
-      - ${HOST_NIM_CACHE:-~/.cache/nim}:/home/nvs/.cache/
+      - ${HOST_NIM_CACHE:-${HOME}/.cache/nim}:/home/nvs/.cache/
     environment:
       - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
@@ -70,7 +70,7 @@ services:
     ports:
       - "${ALPHAFOLD_MULTIMER_HOST_PORT:-18084}:8000"
     volumes:
-      - ${HOST_NIM_CACHE:-~/.cache/nim}:/opt/nim/.cache/
+      - ${HOST_NIM_CACHE:-${HOME}/.cache/nim}:/opt/nim/.cache/
     environment:
       - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
       - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}

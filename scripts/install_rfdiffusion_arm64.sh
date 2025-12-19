@@ -111,20 +111,15 @@ fi
 print_info "Installing RFDiffusion package..."
 pip install -e .
 
-# Clone SE3 Transformer
-SE3_DIR="$TOOLS_DIR/se3_transformer"
-mkdir -p "$SE3_DIR"
-if [ -d "$SE3_DIR/SE3Transformer" ]; then
-    print_warning "SE3 Transformer directory exists. Updating..."
-    cd "$SE3_DIR/SE3Transformer"
-    git pull
-else
-    cd "$SE3_DIR"
-    git clone https://github.com/RosettaCommons/SE3Transformer.git
-    cd SE3Transformer
+# Install SE3 Transformer (vendored inside RFdiffusion)
+SE3_LOCAL_DIR="$INSTALL_DIR/RFdiffusion/env/SE3Transformer"
+if [ ! -d "$SE3_LOCAL_DIR" ]; then
+    echo "ERROR: Expected vendored SE3Transformer at: $SE3_LOCAL_DIR" >&2
+    echo "Re-run with a clean RFdiffusion checkout." >&2
+    exit 1
 fi
 
-pip install -e .
+pip install -e "$SE3_LOCAL_DIR"
 print_status "SE3 Transformer installed"
 
 # Create models directory
