@@ -305,18 +305,37 @@ MODEL_BACKEND=native
 
 # Component paths
 EOF
+
+    AF_ENV_FILE="$PROJECT_ROOT/tools/generated/alphafold2/.env"
+    AF_ENV_FILE_LEGACY="$PROJECT_ROOT/tools/alphafold2/.env"
+    AF_ACTIVATE="$PROJECT_ROOT/tools/generated/alphafold2/activate.sh"
+    AF_ACTIVATE_LEGACY="$PROJECT_ROOT/tools/alphafold2/activate.sh"
     
     # Add AlphaFold2 config if installed
-    if [ "$INSTALL_ALPHAFOLD" = true ] && [ -f "$PROJECT_ROOT/tools/alphafold2/.env" ]; then
+    if [ "$INSTALL_ALPHAFOLD" = true ] && { [ -f "$AF_ENV_FILE" ] || [ -f "$AF_ENV_FILE_LEGACY" ]; }; then
         log_info "  Adding AlphaFold2 configuration..."
-        cat "$PROJECT_ROOT/tools/alphafold2/.env" >> "$MCP_ENV_FILE"
+        if [ -f "$AF_ENV_FILE" ]; then
+            cat "$AF_ENV_FILE" >> "$MCP_ENV_FILE"
+        else
+            cat "$AF_ENV_FILE_LEGACY" >> "$MCP_ENV_FILE"
+        fi
         echo "" >> "$MCP_ENV_FILE"
     fi
     
     # Add RFDiffusion config if installed
-    if [ "$INSTALL_RFDIFFUSION" = true ] && [ -f "$PROJECT_ROOT/tools/rfdiffusion/.env" ]; then
+    RF_ENV_FILE="$PROJECT_ROOT/tools/generated/rfdiffusion/.env"
+    RF_ENV_FILE_LEGACY="$PROJECT_ROOT/tools/rfdiffusion/.env"
+    RF_ENV_FILE_LEGACY2="$PROJECT_ROOT/tools/rfdiffusion/RFdiffusion/.env"
+
+    if [ "$INSTALL_RFDIFFUSION" = true ] && { [ -f "$RF_ENV_FILE" ] || [ -f "$RF_ENV_FILE_LEGACY" ] || [ -f "$RF_ENV_FILE_LEGACY2" ]; }; then
         log_info "  Adding RFDiffusion configuration..."
-        cat "$PROJECT_ROOT/tools/rfdiffusion/.env" >> "$MCP_ENV_FILE"
+        if [ -f "$RF_ENV_FILE" ]; then
+            cat "$RF_ENV_FILE" >> "$MCP_ENV_FILE"
+        elif [ -f "$RF_ENV_FILE_LEGACY" ]; then
+            cat "$RF_ENV_FILE_LEGACY" >> "$MCP_ENV_FILE"
+        else
+            cat "$RF_ENV_FILE_LEGACY2" >> "$MCP_ENV_FILE"
+        fi
         echo "" >> "$MCP_ENV_FILE"
     fi
     
@@ -357,14 +376,22 @@ fi
 echo ""
 echo "Available tools:"
 
-if [ -f "$PROJECT_ROOT/tools/alphafold2/activate.sh" ]; then
+if [ -f "$PROJECT_ROOT/tools/generated/alphafold2/activate.sh" ] || [ -f "$PROJECT_ROOT/tools/alphafold2/activate.sh" ]; then
     echo "  • AlphaFold2"
-    echo "    Activate: source $PROJECT_ROOT/tools/alphafold2/activate.sh"
+    if [ -f "$PROJECT_ROOT/tools/generated/alphafold2/activate.sh" ]; then
+        echo "    Activate: source $PROJECT_ROOT/tools/generated/alphafold2/activate.sh"
+    else
+        echo "    Activate: source $PROJECT_ROOT/tools/alphafold2/activate.sh"
+    fi
 fi
 
-if [ -f "$PROJECT_ROOT/tools/rfdiffusion/activate.sh" ]; then
+if [ -f "$PROJECT_ROOT/tools/generated/rfdiffusion/activate.sh" ] || [ -f "$PROJECT_ROOT/tools/rfdiffusion/activate.sh" ]; then
     echo "  • RFDiffusion"
-    echo "    Activate: source $PROJECT_ROOT/tools/rfdiffusion/activate.sh"
+    if [ -f "$PROJECT_ROOT/tools/generated/rfdiffusion/activate.sh" ]; then
+        echo "    Activate: source $PROJECT_ROOT/tools/generated/rfdiffusion/activate.sh"
+    else
+        echo "    Activate: source $PROJECT_ROOT/tools/rfdiffusion/activate.sh"
+    fi
 fi
 
 if [ -d "$PROJECT_ROOT/tools/proteinmpnn" ]; then
@@ -405,14 +432,22 @@ if [ "$INSTALL_ALPHAFOLD" = true ]; then
     echo "AlphaFold2:"
     echo "  Location: $PROJECT_ROOT/tools/alphafold2"
     echo "  Database: $DB_TIER"
-    echo "  Activate: source $PROJECT_ROOT/tools/alphafold2/activate.sh"
+    if [ -f "$PROJECT_ROOT/tools/generated/alphafold2/activate.sh" ]; then
+        echo "  Activate: source $PROJECT_ROOT/tools/generated/alphafold2/activate.sh"
+    else
+        echo "  Activate: source $PROJECT_ROOT/tools/alphafold2/activate.sh"
+    fi
     echo ""
 fi
 
 if [ "$INSTALL_RFDIFFUSION" = true ]; then
     echo "RFDiffusion:"
     echo "  Location: $PROJECT_ROOT/tools/rfdiffusion"
-    echo "  Activate: source $PROJECT_ROOT/tools/rfdiffusion/activate.sh"
+    if [ -f "$PROJECT_ROOT/tools/generated/rfdiffusion/activate.sh" ]; then
+        echo "  Activate: source $PROJECT_ROOT/tools/generated/rfdiffusion/activate.sh"
+    else
+        echo "  Activate: source $PROJECT_ROOT/tools/rfdiffusion/activate.sh"
+    fi
     echo ""
 fi
 

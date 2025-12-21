@@ -29,6 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TOOLS_DIR="$PROJECT_ROOT/tools"
 RFDIFFUSION_DIR="$TOOLS_DIR/rfdiffusion"
+RFDIFFUSION_INSTALL_ROOT="${RFDIFFUSION_INSTALL_ROOT:-$TOOLS_DIR/generated/rfdiffusion}"
 MODELS_DIR="${RFDIFFUSION_MODELS_DIR:-$HOME/.cache/rfdiffusion/models}"
 
 # Parse arguments
@@ -103,6 +104,7 @@ echo "  Models Directory: $MODELS_DIR"
 echo "  Conda Environment: $CONDA_ENV"
 echo "  Project Root: $PROJECT_ROOT"
 echo "  Installation Directory: $RFDIFFUSION_DIR"
+echo "  Wrapper/Env Output Directory: $RFDIFFUSION_INSTALL_ROOT"
 echo ""
 
 # Detect platform
@@ -340,9 +342,16 @@ if [ -d "$RFDIFFUSION_DIR/RFdiffusion" ]; then
         log_info "Removing existing installation..."
         rm -rf "$RFDIFFUSION_DIR"
     else
-        log_info "RFDiffusion directory exists, updating..."
-        cd "$RFDIFFUSION_DIR/RFdiffusion"
-        git pull -q || log_warning "Git pull failed, continuing..."
+        log_info "RFDiffusion directory exists"
+        if git -C "$RFDIFFUSION_DIR/RFdiffusion" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            # If this is a submodule checkout, HEAD is often detached; don't try to git pull.
+            if git -C "$RFDIFFUSION_DIR/RFdiffusion" symbolic-ref -q HEAD >/dev/null 2>&1; then
+                log_info "Updating RFdiffusion repository (git pull)..."
+                git -C "$RFDIFFUSION_DIR/RFdiffusion" pull -q || log_warning "Git pull failed, continuing..."
+            else
+                log_info "RFdiffusion checkout is in detached HEAD; skipping git pull"
+            fi
+        fi
     fi
 fi
 
@@ -424,8 +433,10 @@ log_success "Model weights processed"
 # Step 7: Create wrapper scripts and validate
 log_step "Step 7/7: Creating wrapper scripts"
 
+mkdir -p "$RFDIFFUSION_INSTALL_ROOT"
+
 # Create activation script
-cat > "$RFDIFFUSION_DIR/activate.sh" << EOF
+cat > "$RFDIFFUSION_INSTALL_ROOT/activate.sh" << EOF
 #!/bin/bash
 # RFDiffusion Environment Activation Script
 
@@ -441,24 +452,24 @@ echo "  Installation: \$RFDIFFUSION_DIR"
 echo "  Models: \$RFDIFFUSION_MODELS"
 EOF
 
-chmod +x "$RFDIFFUSION_DIR/activate.sh"
+chmod +x "$RFDIFFUSION_INSTALL_ROOT/activate.sh"
 
 # Create run script
-cat > "$RFDIFFUSION_DIR/run_rfdiffusion.sh" << EOF
+cat > "$RFDIFFUSION_INSTALL_ROOT/run_rfdiffusion.sh" << EOF
 #!/bin/bash
 # RFDiffusion Run Script
 
-source "$RFDIFFUSION_DIR/activate.sh"
+source "$RFDIFFUSION_INSTALL_ROOT/activate.sh"
 
 python "\$RFDIFFUSION_DIR/scripts/run_inference.py" \\
     inference.model_directory_path="\$RFDIFFUSION_MODELS" \\
     "\$@"
 EOF
 
-chmod +x "$RFDIFFUSION_DIR/run_rfdiffusion.sh"
+chmod +x "$RFDIFFUSION_INSTALL_ROOT/run_rfdiffusion.sh"
 
 # Create validation script
-cat > "$RFDIFFUSION_DIR/validate.py" << 'VALEOF'
+cat > "$RFDIFFUSION_INSTALL_ROOT/validate.py" << 'VALEOF'
 #!/usr/bin/env python3
 """Validate RFDiffusion installation"""
 
@@ -573,26 +584,24 @@ if __name__ == '__main__':
         sys.exit(1)
 VALEOF
 
-chmod +x "$RFDIFFUSION_DIR/validate.py"
+chmod +x "$RFDIFFUSION_INSTALL_ROOT/validate.py"
 
 log_success "Wrapper scripts created"
 
 # Run validation
 if [ "$SKIP_VALIDATION" = false ]; then
     log_info "Running validation tests..."
-    RFDIFFUSION_INSTALL_ROOT="$RFDIFFUSION_DIR"
     source "$RFDIFFUSION_INSTALL_ROOT/activate.sh"
     python "$RFDIFFUSION_INSTALL_ROOT/validate.py" || log_warning "Validation had warnings"
 fi
 
 # Create environment file for MCP server integration
-RFDIFFUSION_INSTALL_ROOT="${RFDIFFUSION_INSTALL_ROOT:-$RFDIFFUSION_DIR}"
 cat > "$RFDIFFUSION_INSTALL_ROOT/.env" << EOF
 RFDIFFUSION_CONDA_ENV=$CONDA_ENV
 RFDIFFUSION_DIR=$RFDIFFUSION_INSTALL_ROOT/RFdiffusion
 RFDIFFUSION_MODELS=$MODELS_DIR
 RFDIFFUSION_GPU_TYPE=$GPU_TYPE
-RFDIFFUSION_NATIVE_CMD=$RFDIFFUSION_INSTALL_ROOT/run_rfdiffusion.sh inference.input_pdb={target_pdb} inference.output_prefix={out_dir}/design_{design_id} inference.num_designs=1
+RFDIFFUSION_NATIVE_CMD='$RFDIFFUSION_INSTALL_ROOT/run_rfdiffusion.sh inference.input_pdb={target_pdb} inference.output_prefix={out_dir}/design_{design_id} inference.num_designs=1'
 EOF
 
 # Final success message
@@ -604,6 +613,7 @@ echo ""
 echo "Installation Summary:"
 echo "  Environment: $CONDA_ENV"
 echo "  Location: $RFDIFFUSION_DIR"
+echo "  Wrappers: $RFDIFFUSION_INSTALL_ROOT"
 echo "  Models: $MODELS_DIR"
 echo "  GPU Support: $GPU_TYPE"
 echo ""

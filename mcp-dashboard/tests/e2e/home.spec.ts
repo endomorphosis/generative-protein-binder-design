@@ -37,6 +37,12 @@ test.describe('Dashboard home', () => {
     await expect(page.getByText('alphafold_multimer', { exact: true })).toBeVisible()
 
     await expect(page.getByText('ready').first()).toBeVisible()
+
+    // Verbose warnings should be visible for non-ready services
+    await expect(page.getByRole('heading', { name: 'Warnings' })).toBeVisible()
+    await expect(page.getByText(/rfdiffusion is not_ready/i)).toBeVisible()
+    await expect(page.getByText(/proteinmpnn is error/i)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Warnings' }).locator('..').getByText('boom')).toBeVisible()
   })
 
   test('service status error state is visible', async ({ page }) => {

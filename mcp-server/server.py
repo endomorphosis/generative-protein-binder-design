@@ -963,4 +963,5 @@ async def process_job(job_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int((os.getenv("PORT") or os.getenv("MCP_SERVER_PORT") or "8000").strip())
+    uvicorn.run(app, host="0.0.0.0", port=port)

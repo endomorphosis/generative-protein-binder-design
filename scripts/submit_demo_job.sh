@@ -10,9 +10,18 @@ set -euo pipefail
 #
 # Env:
 #   MCP_SERVER_URL (optional override)
+#   MCP_SERVER_URL_FORCE=1 to force MCP_SERVER_URL even if stack is available
 
 if [[ -n "${MCP_SERVER_URL:-}" ]]; then
-  : "Using provided MCP_SERVER_URL"
+  # In some dev environments MCP_SERVER_URL may be exported globally (often pointing at 8010).
+  # Prefer the stack server (8011) when it is healthy unless the user explicitly forces the override.
+  if [[ "${MCP_SERVER_URL_FORCE:-0}" != "1" ]] \
+    && [[ "$MCP_SERVER_URL" == "http://localhost:8010" || "$MCP_SERVER_URL" == "http://127.0.0.1:8010" ]]; then
+    if curl -fsS "http://localhost:8011/health" >/dev/null 2>&1; then
+      echo "Note: MCP_SERVER_URL is set to $MCP_SERVER_URL, but stack server is healthy; using http://localhost:8011 (set MCP_SERVER_URL_FORCE=1 to override)." >&2
+      MCP_SERVER_URL="http://localhost:8011"
+    fi
+  fi
 else
   # Out-of-the-box, both a "local" MCP server (8010) and a "stack" MCP server (8011)
   # may be running. Prefer the stack server when available.

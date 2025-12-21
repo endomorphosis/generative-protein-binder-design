@@ -35,23 +35,23 @@ services:
     build:
       context: ../mcp-server
       dockerfile: Dockerfile
-    ports:
-      - "${MCP_SERVER_HOST_PORT:-8011}:8000"
+    network_mode: host
     volumes:
       - mcp-config:/config
       - mcp-models:/models
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       - MCP_CONFIG_PATH=/config/mcp_config.json
       - MCP_ROUTING_MODE=${MCP_ROUTING_MODE:-fallback}
-      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-embedded,nim,external}
+      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-nim,external,embedded}
+
+      # Run MCP server on the expected host port when using host networking.
+      - PORT=${MCP_SERVER_HOST_PORT:-8011}
 
       # Route AlphaFold2 + RFdiffusion to host-native services.
-      - ALPHAFOLD_URL=${ALPHAFOLD_URL:-http://host.docker.internal:18081}
-      - RFDIFFUSION_URL=${RFDIFFUSION_URL:-http://host.docker.internal:18082}
-      - PROTEINMPNN_URL=http://proteinmpnn:8000
-      - ALPHAFOLD_MULTIMER_URL=
+      - ALPHAFOLD_URL=${ALPHAFOLD_URL:-http://127.0.0.1:18081}
+      - RFDIFFUSION_URL=${RFDIFFUSION_URL:-http://127.0.0.1:18082}
+      - PROTEINMPNN_URL=${PROTEINMPNN_URL:-http://127.0.0.1:${PROTEINMPNN_HOST_PORT:-18083}}
+      - ALPHAFOLD_MULTIMER_URL=${ALPHAFOLD_MULTIMER_URL:-http://127.0.0.1:18084}
 
       - MCP_EMBEDDED_AUTO_DOWNLOAD=${MCP_EMBEDDED_AUTO_DOWNLOAD:-1}
       - MCP_BOOTSTRAP_ON_STARTUP=${MCP_BOOTSTRAP_ON_STARTUP:-1}
@@ -64,11 +64,10 @@ services:
     build:
       context: ../mcp-dashboard
       dockerfile: Dockerfile
-    ports:
-      - "${MCP_DASHBOARD_HOST_PORT:-3000}:3000"
+    network_mode: host
     environment:
-      - MCP_SERVER_URL=http://mcp-server:8000
-      - NEXT_PUBLIC_MCP_SERVER_URL=http://mcp-server:8000
+      - MCP_SERVER_URL=http://127.0.0.1:${MCP_SERVER_HOST_PORT:-8011}
+      - NEXT_PUBLIC_MCP_SERVER_URL=http://127.0.0.1:${MCP_SERVER_HOST_PORT:-8011}
     depends_on:
       - mcp-server
 

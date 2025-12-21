@@ -8,8 +8,8 @@ set -euo pipefail
 # - download weights/DBs (tiered for AlphaFold2)
 # - create wrapper scripts under tools/
 # - write integration env files:
-#     tools/alphafold2/.env
-#     tools/rfdiffusion/.env
+#     tools/generated/alphafold2/.env
+#     tools/generated/rfdiffusion/.env
 #
 # Usage:
 #   ./scripts/provision_arm64_host_native_models.sh
@@ -87,8 +87,10 @@ if [[ "$FORCE" == "1" ]]; then
 fi
 
 # AlphaFold2
-if [[ "$FORCE" != "1" ]] && [[ -f "$ROOT_DIR/tools/alphafold2/.env" ]]; then
-  echo "Found tools/alphafold2/.env; skipping AlphaFold2 install."
+AF_ENV_FILE="$ROOT_DIR/tools/generated/alphafold2/.env"
+AF_ENV_FILE_LEGACY="$ROOT_DIR/tools/alphafold2/.env"
+if [[ "$FORCE" != "1" ]] && [[ -f "$AF_ENV_FILE" || -f "$AF_ENV_FILE_LEGACY" ]]; then
+  echo "Found AlphaFold2 env file; skipping AlphaFold2 install."
 else
   echo "Installing AlphaFold2 (this downloads weights/DBs)..."
   bash "$ROOT_DIR/scripts/install_alphafold2_complete.sh" --db-tier "$DB_TIER" "${AF_FORCE_ARGS[@]}" || {
@@ -100,8 +102,11 @@ fi
 echo
 
 # RFDiffusion
-if [[ "$FORCE" != "1" ]] && [[ -f "$ROOT_DIR/tools/rfdiffusion/.env" ]]; then
-  echo "Found tools/rfdiffusion/.env; skipping RFDiffusion install."
+RF_ENV_FILE="$ROOT_DIR/tools/generated/rfdiffusion/.env"
+RF_ENV_FILE_LEGACY="$ROOT_DIR/tools/rfdiffusion/.env"
+RF_ENV_FILE_LEGACY2="$ROOT_DIR/tools/rfdiffusion/RFdiffusion/.env"
+if [[ "$FORCE" != "1" ]] && [[ -f "$RF_ENV_FILE" || -f "$RF_ENV_FILE_LEGACY" || -f "$RF_ENV_FILE_LEGACY2" ]]; then
+  echo "Found RFDiffusion env file; skipping RFDiffusion install."
 else
   echo "Installing RFDiffusion (this downloads weights)..."
   bash "$ROOT_DIR/scripts/install_rfdiffusion_complete.sh" "${RF_FORCE_ARGS[@]}" || {
@@ -131,5 +136,5 @@ EOF
 if [[ "$START_SERVICES" == "1" ]]; then
   echo
   echo "Starting host-native services..."
-  exec "$ROOT_DIR/scripts/run_arm64_native_model_services.sh"
+  exec bash "$ROOT_DIR/scripts/run_arm64_native_model_services.sh"
 fi

@@ -31,6 +31,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TOOLS_DIR="$PROJECT_ROOT/tools"
 ALPHAFOLD_DIR="$TOOLS_DIR/alphafold2"
+ALPHAFOLD_INSTALL_ROOT="${ALPHAFOLD_INSTALL_ROOT:-$TOOLS_DIR/generated/alphafold2}"
 DATA_DIR="${ALPHAFOLD_DATA_DIR:-$HOME/.cache/alphafold}"
 
 # Parse arguments
@@ -118,6 +119,7 @@ echo "  Data Directory: $DATA_DIR"
 echo "  Conda Environment: $CONDA_ENV"
 echo "  Project Root: $PROJECT_ROOT"
 echo "  Installation Directory: $ALPHAFOLD_DIR"
+echo "  Wrapper/Env Output Directory: $ALPHAFOLD_INSTALL_ROOT"
 echo ""
 
 # Detect platform
@@ -178,9 +180,10 @@ install_system_deps() {
                 libhdf5-dev \
                 libopenblas-dev \
                 python3-dev \
-                aria2 2>/dev/null || log_warning "Some packages may have failed to install"
+                aria2 \
+                rsync 2>/dev/null || log_warning "Some packages may have failed to install"
         elif command -v yum &>/dev/null; then
-            sudo yum install -y gcc gcc-c++ cmake git wget curl hdf5-devel openblas-devel python3-devel aria2
+            sudo yum install -y gcc gcc-c++ cmake git wget curl hdf5-devel openblas-devel python3-devel aria2 rsync
         fi
     elif [[ "$OS" == "Darwin" ]]; then
         log_info "Installing system packages via Homebrew..."
@@ -188,7 +191,7 @@ install_system_deps() {
             log_error "Homebrew not found. Install from https://brew.sh"
             exit 1
         fi
-        brew install cmake wget git hdf5 openblas aria2 2>/dev/null || log_warning "Some packages may have failed"
+        brew install cmake wget git hdf5 openblas aria2 rsync 2>/dev/null || log_warning "Some packages may have failed"
     fi
 }
 
@@ -335,6 +338,35 @@ pip install -q -c "$AF_CONSTRAINTS_FILE" \
     immutabledict==2.2.3 \
     dm-tree==0.1.8
 
+log_info "Installing TensorFlow (required by this AlphaFold codepath)..."
+python - <<'PY'
+try:
+        import tensorflow as tf  # noqa: F401
+        print('TensorFlow already installed')
+except Exception:
+        raise SystemExit(1)
+PY
+if [[ "$?" != "0" ]]; then
+    # Prefer pip for broad wheel availability across Linux/ARM64.
+    pip install -q -c "$AF_CONSTRAINTS_FILE" "tensorflow==2.15.0" || {
+        log_error "Failed to install tensorflow==2.15.0"
+        exit 1
+    }
+fi
+
+log_info "Installing AlphaFold external binaries (hmmer/hhsuite/kalign)..."
+# AlphaFold calls out to jackhmmer/hhblits/hhsearch/kalign.
+mamba install -y -q -c conda-forge hmmer hhsuite kalign || {
+    log_error "Failed to install required external tools (hmmer/hhsuite/kalign)"
+    exit 1
+}
+
+log_info "Installing OpenMM + pdbfixer (for relaxation import/runtime)..."
+# Even if relaxation is disabled at runtime, some AlphaFold versions import relax modules.
+# Install these to keep the environment robust.
+mamba install -y -q -c conda-forge openmm || log_warning "OpenMM install failed (relaxation may not work)"
+pip install -q pdbfixer || log_warning "pdbfixer install failed (relaxation may not work)"
+
 # Sanity check: ensure JAX pin actually held (Haiku expects older JAX APIs).
 python - <<'PY'
 import jax, jaxlib
@@ -356,9 +388,16 @@ if [ -d "$ALPHAFOLD_DIR" ]; then
         log_info "Removing existing installation..."
         rm -rf "$ALPHAFOLD_DIR"
     else
-        log_info "AlphaFold directory exists, updating..."
-        cd "$ALPHAFOLD_DIR"
-        git pull -q || log_warning "Git pull failed, continuing..."
+        log_info "AlphaFold directory exists"
+        if git -C "$ALPHAFOLD_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            # If this is a submodule checkout, HEAD is often detached; don't try to git pull.
+            if git -C "$ALPHAFOLD_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
+                log_info "Updating AlphaFold repository (git pull)..."
+                git -C "$ALPHAFOLD_DIR" pull -q || log_warning "Git pull failed, continuing..."
+            else
+                log_info "AlphaFold checkout is in detached HEAD; skipping git pull"
+            fi
+        fi
     fi
 fi
 
@@ -409,46 +448,46 @@ log_success "Model parameters present"
 # Step 7: Download databases based on tier
 log_step "Step 7/8: Downloading databases (tier: $DB_TIER)"
 
-download_databases() {
-    case $DB_TIER in
-        minimal)
-            log_info "Minimal tier: Model parameters only (already downloaded)"
-            echo "# AlphaFold2 minimal installation" > "$DATA_DIR/.tier"
-            echo "tier=minimal" >> "$DATA_DIR/.tier"
-            ;;
-            
-        reduced)
-            log_info "Downloading reduced databases (~50GB)..."
-            mkdir -p "$DATA_DIR/databases"
-            
-            # Download small BFD
-            log_info "  Downloading small BFD..."
-            if [ ! -f "$DATA_DIR/databases/small_bfd.tar.gz" ]; then
-                wget -c "https://storage.googleapis.com/alphafold-databases/reduced_dbs/bfd-first_non_consensus_sequences.fasta.gz" \
-                    -O "$DATA_DIR/databases/bfd-first_non_consensus_sequences.fasta.gz" || \
-                    log_warning "Small BFD download failed (may need manual download)"
-            fi
-            
-            # Download MGnify
-            log_info "  Downloading MGnify..."
-            if [ ! -f "$DATA_DIR/databases/mgy_clusters_2022_05.fa.gz" ]; then
-                MGNIFY_URL="${ALPHAFOLD_MGNIFY_URL:-https://storage.googleapis.com/alphafold-databases/reduced_dbs/mgy_clusters_2022_05.fa.gz}"
-                if wget -c "$MGNIFY_URL" -O "$DATA_DIR/databases/mgy_clusters_2022_05.fa.gz"; then
-                    log_info "  ✓ MGnify downloaded"
-                else
-                    log_warning "MGnify download failed"
+download_mgnify_with_overrides() {
+    # Official script downloads to: $DATA_DIR/mgnify/mgy_clusters_2022_05.fa
+    local root_dir="$DATA_DIR/mgnify"
+    local source_url="${ALPHAFOLD_MGNIFY_URL:-https://storage.googleapis.com/alphafold-databases/v2.3/mgy_clusters_2022_05.fa.gz}"
+    local basename
+    basename="$(basename "$source_url")"
+    local out_fa="$root_dir/${basename%.gz}"
 
-                    # Optional fallback: build a small substitute FASTA from HuggingFace.
-                    # This is not the official MGnify cluster DB; it is a best-effort way
-                    # to unblock restricted environments for demo/bring-up.
-                    if [ "${ALPHAFOLD_MGNIFY_FALLBACK:-none}" = "huggingface" ]; then
-                        log_info "  Attempting HuggingFace fallback (datasets-server API)..."
-                                                if MGNIFY_OUT_PATH="$DATA_DIR/databases/mgy_clusters_2022_05.fa.gz" \
-                                                    ALPHAFOLD_MGNIFY_HF_DATASET="${ALPHAFOLD_MGNIFY_HF_DATASET:-tattabio/OMG_prot50}" \
-                                                    ALPHAFOLD_MGNIFY_HF_TOKEN="${ALPHAFOLD_MGNIFY_HF_TOKEN:-}" \
-                                                    ALPHAFOLD_MGNIFY_HF_MAX_SEQS="${ALPHAFOLD_MGNIFY_HF_MAX_SEQS:-200000}" \
-                                                    ALPHAFOLD_MGNIFY_HF_PAGE_SIZE="${ALPHAFOLD_MGNIFY_HF_PAGE_SIZE:-1000}" \
-                                                    python - <<'PY'
+    if [[ -f "$out_fa" ]]; then
+        log_info "  ✓ MGnify already present: $out_fa"
+        return 0
+    fi
+
+    mkdir -p "$root_dir"
+
+    log_info "  Downloading MGnify (may be large)..."
+    if command -v aria2c >/dev/null 2>&1; then
+        aria2c "$source_url" --dir="$root_dir" || true
+    else
+        wget -c "$source_url" -O "$root_dir/$basename" || true
+    fi
+
+    if [[ -f "$root_dir/$basename" ]]; then
+        gunzip -f "$root_dir/$basename" || true
+    fi
+
+    if [[ -f "$out_fa" ]]; then
+        log_info "  ✓ MGnify downloaded"
+        return 0
+    fi
+
+    log_warning "MGnify download failed"
+    if [ "${ALPHAFOLD_MGNIFY_FALLBACK:-none}" = "huggingface" ]; then
+        log_info "  Attempting HuggingFace fallback (datasets-server API)..."
+        if MGNIFY_OUT_PATH="$out_fa.gz" \
+            ALPHAFOLD_MGNIFY_HF_DATASET="${ALPHAFOLD_MGNIFY_HF_DATASET:-tattabio/OMG_prot50}" \
+            ALPHAFOLD_MGNIFY_HF_TOKEN="${ALPHAFOLD_MGNIFY_HF_TOKEN:-}" \
+            ALPHAFOLD_MGNIFY_HF_MAX_SEQS="${ALPHAFOLD_MGNIFY_HF_MAX_SEQS:-200000}" \
+            ALPHAFOLD_MGNIFY_HF_PAGE_SIZE="${ALPHAFOLD_MGNIFY_HF_PAGE_SIZE:-1000}" \
+            python - <<'PY'
 import gzip
 import json
 import os
@@ -501,7 +540,6 @@ with gzip.open(tmp_path, 'wt', encoding='utf-8') as f:
             if not seq:
                 continue
             f.write('>' + seq_id + '\n')
-            # wrap at 60 chars
             for i in range(0, len(seq), 60):
                 f.write(seq[i:i+60] + '\n')
             written += 1
@@ -510,7 +548,6 @@ with gzip.open(tmp_path, 'wt', encoding='utf-8') as f:
         offset += len(rows)
         if len(rows) < n:
             break
-        # be polite to the public API
         time.sleep(0.1)
 
 os.replace(tmp_path, out_path)
@@ -518,51 +555,94 @@ print(f'Wrote {written} sequences to {out_path}', file=sys.stderr)
 if written < 1000:
     raise SystemExit('Too few sequences fetched from HuggingFace; aborting')
 PY
-                        then
-                          log_info "  ✓ HuggingFace fallback generated mgy_clusters_2022_05.fa.gz"
-                        else
-                          log_warning "HuggingFace fallback failed; MGnify still missing"
-                        fi
-                    fi
-                fi
+        then
+            gunzip -f "$out_fa.gz" || true
+            if [[ -f "$out_fa" ]]; then
+                log_info "  ✓ HuggingFace fallback generated MGnify"
+                return 0
             fi
-            
-            # Download PDB70
-            log_info "  Downloading PDB70..."
-            if [ ! -d "$DATA_DIR/databases/pdb70" ]; then
-                mkdir -p "$DATA_DIR/databases/pdb70"
-                wget -c "http://wwwuser.gwdg.de/~compbiol/data/hhsuite/databases/hhsuite_dbs/old-releases/pdb70_from_mmcif_200401.tar.gz" \
-                    -O /tmp/pdb70.tar.gz || log_warning "PDB70 download failed"
-                [ -f /tmp/pdb70.tar.gz ] && tar -xzf /tmp/pdb70.tar.gz -C "$DATA_DIR/databases/" && rm /tmp/pdb70.tar.gz
-            fi
+        fi
+        log_warning "HuggingFace fallback failed; MGnify still missing"
+    fi
+    return 1
+}
 
-                # Download UniRef30 (required for --db_preset=reduced_dbs)
-                log_info "  Downloading UniRef30..."
-                if [ ! -f "$DATA_DIR/databases/UniRef30_2021_03.tar.gz" ]; then
-                    wget -c "https://storage.googleapis.com/alphafold-databases/v2.3/UniRef30_2021_03.tar.gz" \
-                        -O "$DATA_DIR/databases/UniRef30_2021_03.tar.gz" || \
-                        log_warning "UniRef30 download failed"
-                fi
-                if [ -f "$DATA_DIR/databases/UniRef30_2021_03.tar.gz" ] && [ ! -d "$DATA_DIR/databases/uniref30" ]; then
-                    mkdir -p "$DATA_DIR/databases/uniref30"
-                    tar -xzf "$DATA_DIR/databases/UniRef30_2021_03.tar.gz" -C "$DATA_DIR/databases/uniref30" || \
-                        log_warning "UniRef30 extract failed"
-                fi
+run_official_download_script() {
+    local script="$1"
+    # The official scripts are not always idempotent (e.g. gunzip refuses to
+    # overwrite an existing decompressed file). Avoid re-running when the final
+    # expected outputs already exist.
+    case "$script" in
+        download_small_bfd.sh)
+            [[ -f "$DATA_DIR/small_bfd/bfd-first_non_consensus_sequences.fasta" ]] && return 0
+            ;;
+        download_uniref90.sh)
+            [[ -f "$DATA_DIR/uniref90/uniref90.fasta" ]] && return 0
+            ;;
+        download_mgnify.sh)
+            [[ -f "$DATA_DIR/mgnify/mgy_clusters_2022_05.fa" ]] && return 0
+            ;;
+        download_uniprot.sh)
+            [[ -f "$DATA_DIR/uniprot/uniprot.fasta" ]] && return 0
+            ;;
+        download_pdb_seqres.sh)
+            [[ -f "$DATA_DIR/pdb_seqres/pdb_seqres.txt" ]] && return 0
+            ;;
+        download_pdb70.sh)
+            [[ -f "$DATA_DIR/pdb70/pdb70_hhm.ffdata" && -f "$DATA_DIR/pdb70/pdb70_hhm.ffindex" ]] && return 0
+            ;;
+        download_pdb_mmcif.sh)
+            [[ -d "$DATA_DIR/pdb_mmcif/mmcif_files" && -f "$DATA_DIR/pdb_mmcif/obsolete.dat" ]] && return 0
+            ;;
+        download_uniref30.sh)
+            [[ -f "$DATA_DIR/uniref30/UniRef30_2021_03_hhm.ffdata" && -f "$DATA_DIR/uniref30/UniRef30_2021_03_hhm.ffindex" ]] && return 0
+            ;;
+    esac
+    if [[ -f "$ALPHAFOLD_DIR/scripts/$script" ]]; then
+        bash "$ALPHAFOLD_DIR/scripts/$script" "$DATA_DIR" || return 1
+        return 0
+    fi
+    log_error "Missing AlphaFold download script: $ALPHAFOLD_DIR/scripts/$script"
+    return 1
+}
+
+download_databases() {
+    case $DB_TIER in
+        minimal)
+            log_info "Minimal tier: Model parameters only (already downloaded)"
+            echo "# AlphaFold2 minimal installation" > "$DATA_DIR/.tier"
+            echo "tier=minimal" >> "$DATA_DIR/.tier"
+            ;;
             
+        reduced)
+            log_info "Downloading reduced databases (~50GB) into: $DATA_DIR"
+            log_info "Using official AlphaFold download scripts (reduced_dbs layout)"
+
+            # Reduced DB set (still requires templates via PDB mmCIF rsync).
+            run_official_download_script download_small_bfd.sh || log_warning "Small BFD download failed"
+            download_mgnify_with_overrides || log_warning "MGnify missing"
+            run_official_download_script download_pdb70.sh || log_warning "PDB70 download failed"
+            run_official_download_script download_pdb_mmcif.sh || log_warning "PDB mmCIF download failed"
+            run_official_download_script download_uniref30.sh || log_warning "UniRef30 download failed"
+            run_official_download_script download_uniref90.sh || log_warning "UniRef90 download failed"
+            run_official_download_script download_uniprot.sh || log_warning "UniProt download failed"
+            run_official_download_script download_pdb_seqres.sh || log_warning "PDB SeqRes download failed"
+
             echo "tier=reduced" > "$DATA_DIR/.tier"
-            log_success "Reduced databases downloaded"
+            log_success "Reduced database provisioning finished (check logs above for any warnings)"
             ;;
             
         full)
             log_warning "Full database download (~2.3TB) will take several hours..."
-            log_info "Running official download script..."
-            
-            mkdir -p "$DATA_DIR/databases"
-            
-            # Use AlphaFold's official download script
+            log_info "Downloading full databases into: $DATA_DIR"
             if [ -f "$ALPHAFOLD_DIR/scripts/download_all_data.sh" ]; then
-                bash "$ALPHAFOLD_DIR/scripts/download_all_data.sh" "$DATA_DIR/databases" || \
-                    log_error "Database download failed. You may need to run this manually."
+                # First attempt: official full download.
+                if ! bash "$ALPHAFOLD_DIR/scripts/download_all_data.sh" "$DATA_DIR" full_dbs; then
+                    log_warning "Official full download script failed; attempting MGnify override + rerun"
+                    download_mgnify_with_overrides || true
+                    bash "$ALPHAFOLD_DIR/scripts/download_all_data.sh" "$DATA_DIR" full_dbs || \
+                        log_error "Database download failed. You may need to run this manually."
+                fi
             else
                 log_error "Download script not found. Please download databases manually."
                 log_info "See: https://github.com/deepmind/alphafold#genetic-databases"
@@ -579,8 +659,10 @@ download_databases
 # Step 8: Create wrapper scripts and validate
 log_step "Step 8/8: Creating wrapper scripts"
 
+mkdir -p "$ALPHAFOLD_INSTALL_ROOT"
+
 # Create activation script
-cat > "$ALPHAFOLD_DIR/activate.sh" << EOF
+cat > "$ALPHAFOLD_INSTALL_ROOT/activate.sh" << EOF
 #!/bin/bash
 # AlphaFold2 Environment Activation Script
 
@@ -597,27 +679,28 @@ echo "  Data directory: \$ALPHAFOLD_DATA_DIR"
 echo "  Database tier: \$ALPHAFOLD_DB_TIER"
 EOF
 
-chmod +x "$ALPHAFOLD_DIR/activate.sh"
+chmod +x "$ALPHAFOLD_INSTALL_ROOT/activate.sh"
 
 # Create run script
-cat > "$ALPHAFOLD_DIR/run_alphafold.sh" << EOF
+cat > "$ALPHAFOLD_INSTALL_ROOT/run_alphafold.sh" << EOF
 #!/bin/bash
 # AlphaFold2 Run Script
 
-source "$ALPHAFOLD_DIR/activate.sh"
+source "$ALPHAFOLD_INSTALL_ROOT/activate.sh"
 
 python "$ALPHAFOLD_DIR/run_alphafold.py" \\
     --data_dir="\$ALPHAFOLD_DATA_DIR" \\
-    --db_preset=reduced_dbs \\
+    --db_preset=$([ "$DB_TIER" = "full" ] && echo "full_dbs" || echo "reduced_dbs") \\
     --model_preset=monomer \\
-    --use_gpu=$([ "$GPU_TYPE" != "cpu" ] && echo "true" || echo "false") \\
+    --models_to_relax=none \\
+    --use_gpu_relax=false \\
     "\$@"
 EOF
 
-chmod +x "$ALPHAFOLD_DIR/run_alphafold.sh"
+chmod +x "$ALPHAFOLD_INSTALL_ROOT/run_alphafold.sh"
 
 # Create validation script
-cat > "$ALPHAFOLD_DIR/validate.py" << 'VALEOF'
+cat > "$ALPHAFOLD_INSTALL_ROOT/validate.py" << 'VALEOF'
 #!/usr/bin/env python3
 """Validate AlphaFold2 installation"""
 
@@ -700,25 +783,34 @@ if __name__ == '__main__':
         sys.exit(1)
 VALEOF
 
-chmod +x "$ALPHAFOLD_DIR/validate.py"
+chmod +x "$ALPHAFOLD_INSTALL_ROOT/validate.py"
 
 log_success "Wrapper scripts created"
 
 # Run validation
 if [ "$SKIP_VALIDATION" = false ]; then
     log_info "Running validation tests..."
-    source "$ALPHAFOLD_DIR/activate.sh"
-    python "$ALPHAFOLD_DIR/validate.py" || log_warning "Validation had warnings"
+    source "$ALPHAFOLD_INSTALL_ROOT/activate.sh"
+    python "$ALPHAFOLD_INSTALL_ROOT/validate.py" || log_warning "Validation had warnings"
 fi
 
 # Create environment file for MCP server integration
-cat > "$ALPHAFOLD_DIR/.env" << EOF
+DB_PRESET_VALUE="reduced_dbs"
+BFD_FLAG_VALUE="--small_bfd_database_path=$DATA_DIR/small_bfd/bfd-first_non_consensus_sequences.fasta"
+if [ "$DB_TIER" = "full" ]; then
+    DB_PRESET_VALUE="full_dbs"
+    BFD_FLAG_VALUE="--bfd_database_path=$DATA_DIR/bfd/bfd_metaclust_clu_complete_id30_c90_final_seq.sorted_opt"
+fi
+
+cat > "$ALPHAFOLD_INSTALL_ROOT/.env" << EOF
 ALPHAFOLD_CONDA_ENV=$CONDA_ENV
 ALPHAFOLD_DIR=$ALPHAFOLD_DIR
+ALPHAFOLD_INSTALL_ROOT=$ALPHAFOLD_INSTALL_ROOT
 ALPHAFOLD_DATA_DIR=$DATA_DIR
 ALPHAFOLD_DB_TIER=$DB_TIER
 ALPHAFOLD_GPU_TYPE=$GPU_TYPE
-ALPHAFOLD_NATIVE_CMD=$ALPHAFOLD_DIR/run_alphafold.sh --fasta_paths={fasta} --output_dir={out_dir}
+ALPHAFOLD_NATIVE_OUTPUT_PDB=ranked_0.pdb
+ALPHAFOLD_NATIVE_CMD="PYTHONPATH=$ALPHAFOLD_DIR:\$PYTHONPATH conda run -n $CONDA_ENV python $ALPHAFOLD_DIR/run_alphafold.py --data_dir=$DATA_DIR --db_preset=$DB_PRESET_VALUE --model_preset=monomer --models_to_relax=none --use_gpu_relax=false --max_template_date=2022-12-31 --uniref90_database_path=$DATA_DIR/uniref90/uniref90.fasta --mgnify_database_path=$DATA_DIR/mgnify/mgy_clusters_2022_05.fa --pdb70_database_path=$DATA_DIR/pdb70/pdb70 --uniref30_database_path=$DATA_DIR/uniref30/UniRef30_2021_03 $BFD_FLAG_VALUE --template_mmcif_dir=$DATA_DIR/pdb_mmcif/mmcif_files --obsolete_pdbs_path=$DATA_DIR/pdb_mmcif/obsolete.dat --uniprot_database_path=$DATA_DIR/uniprot/uniprot.fasta --pdb_seqres_database_path=$DATA_DIR/pdb_seqres/pdb_seqres.txt --fasta_paths={fasta} --output_dir={out_dir}"
 EOF
 
 # Final success message
@@ -740,8 +832,8 @@ echo "  2. Run: $ALPHAFOLD_DIR/run_alphafold.sh --fasta_paths=input.fasta --outp
 echo "  3. Validate: python $ALPHAFOLD_DIR/validate.py"
 echo ""
 echo "MCP Server Integration:"
-echo "  Configuration saved to: $ALPHAFOLD_DIR/.env"
-echo "  Import with: export \$(cat $ALPHAFOLD_DIR/.env | xargs)"
+echo "  Configuration saved to: $ALPHAFOLD_INSTALL_ROOT/.env"
+echo "  Import with: export \$(cat $ALPHAFOLD_INSTALL_ROOT/.env | xargs)"
 echo ""
 
 case $DB_TIER in

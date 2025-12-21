@@ -87,19 +87,38 @@ esac
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Auto-select the most useful mode.
+# On ARM64, the containerized "native" stack is CI-only and does not perform real inference.
+# For real out-of-box results, default to host-native mode and provision minimal assets.
+if [[ "$MODE" == "auto" ]]; then
+  ARCH="$(uname -m)"
+  if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+    MODE="arm64-host-native"
+    if [[ "$PROVISION" == "0" ]]; then
+      PROVISION=1
+    fi
+  fi
+fi
+
 start_host_native_services_if_needed() {
   local alphafold_port="${ALPHAFOLD_NATIVE_PORT:-18081}"
+  local alphafold_multimer_port="${ALPHAFOLD_MULTIMER_NATIVE_PORT:-18084}"
   local rfdiffusion_port="${RFDIFFUSION_NATIVE_PORT:-18082}"
+  local af_env_file="$ROOT_DIR/tools/generated/alphafold2/.env"
+  local af_env_file_legacy="$ROOT_DIR/tools/alphafold2/.env"
+  local rf_env_file="$ROOT_DIR/tools/generated/rfdiffusion/.env"
+  local rf_env_file_legacy="$ROOT_DIR/tools/rfdiffusion/.env"
+  local rf_env_file_legacy2="$ROOT_DIR/tools/rfdiffusion/RFdiffusion/.env"
 
   # Provision on demand (only if requested).
   if [[ "$PROVISION" == "1" ]]; then
-    if [[ ! -f "$ROOT_DIR/tools/alphafold2/.env" || ! -f "$ROOT_DIR/tools/rfdiffusion/.env" ]]; then
+    if [[ (! -f "$af_env_file" && ! -f "$af_env_file_legacy") || (! -f "$rf_env_file" && ! -f "$rf_env_file_legacy" && ! -f "$rf_env_file_legacy2") ]]; then
       echo "Provisioning host-native tools/assets (db-tier=$DB_TIER)..."
       "$ROOT_DIR/scripts/provision_arm64_host_native_models.sh" --db-tier "$DB_TIER"
     fi
   fi
 
-  if [[ ! -f "$ROOT_DIR/tools/alphafold2/.env" || ! -f "$ROOT_DIR/tools/rfdiffusion/.env" ]]; then
+  if [[ (! -f "$af_env_file" && ! -f "$af_env_file_legacy") || (! -f "$rf_env_file" && ! -f "$rf_env_file_legacy" && ! -f "$rf_env_file_legacy2") ]]; then
     cat >&2 <<EOF
 ERR: Host-native services are not configured yet.
 
@@ -114,8 +133,9 @@ EOF
 
   # If already healthy, don't start another copy.
   if curl -fsS "http://localhost:${alphafold_port}/v1/health/ready" >/dev/null 2>&1 \
+    && curl -fsS "http://localhost:${alphafold_multimer_port}/v1/health/ready" >/dev/null 2>&1 \
     && curl -fsS "http://localhost:${rfdiffusion_port}/v1/health/ready" >/dev/null 2>&1; then
-    echo "Host-native AlphaFold2/RFDiffusion services already healthy (:${alphafold_port}, :${rfdiffusion_port})."
+    echo "Host-native AlphaFold2/RFDiffusion services already healthy (:${alphafold_port}, :${alphafold_multimer_port}, :${rfdiffusion_port})."
     return 0
   fi
 
@@ -125,12 +145,13 @@ EOF
 
   echo "Starting host-native AlphaFold2/RFDiffusion services in background..."
   echo "- Logs: $log_file"
-  nohup "$ROOT_DIR/scripts/run_arm64_native_model_services.sh" >"$log_file" 2>&1 &
+  nohup bash "$ROOT_DIR/scripts/run_arm64_native_model_services.sh" >"$log_file" 2>&1 &
   echo $! > "$pid_file"
 
   echo "Waiting for host-native services to become healthy..."
   for _ in $(seq 1 90); do
     if curl -fsS "http://localhost:${alphafold_port}/v1/health/ready" >/dev/null 2>&1 \
+      && curl -fsS "http://localhost:${alphafold_multimer_port}/v1/health/ready" >/dev/null 2>&1 \
       && curl -fsS "http://localhost:${rfdiffusion_port}/v1/health/ready" >/dev/null 2>&1; then
       echo "Host-native services are healthy."
       return 0
@@ -157,4 +178,8 @@ if [[ ${#PASSTHRU[@]} -gt 0 ]]; then
   COMPOSE_ARGS+=("${PASSTHRU[@]}")
 fi
 
-exec "$ROOT_DIR/scripts/run_dashboard_stack.sh" "--$MODE" "${COMPOSE_ARGS[@]}"
+if [[ "$MODE" == "auto" ]]; then
+  exec "$ROOT_DIR/scripts/run_dashboard_stack.sh" "${COMPOSE_ARGS[@]}"
+else
+  exec "$ROOT_DIR/scripts/run_dashboard_stack.sh" "--$MODE" "${COMPOSE_ARGS[@]}"
+fi

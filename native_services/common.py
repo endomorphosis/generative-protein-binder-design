@@ -28,11 +28,25 @@ def require_env(name: str) -> str:
 def run_cmd(cmd: str, *, timeout_seconds: int) -> subprocess.CompletedProcess[str]:
     # Use bash -lc so users can rely on conda init / module loads, etc.
     # This also allows users to provide complex pipelines.
+    #
+    # IMPORTANT: These native services run under a Python venv (for FastAPI/uvicorn),
+    # but the model commands often need to run under conda envs or system installs.
+    # If we leak VIRTUAL_ENV and the venv's bin/ prefix into the child process,
+    # some tools (notably `conda run`) may end up selecting the wrong python.
+    child_env = os.environ.copy()
+    venv = child_env.pop("VIRTUAL_ENV", None)
+    if venv:
+        path = child_env.get("PATH", "")
+        venv_bin_prefix = f"{venv}/bin:"
+        if path.startswith(venv_bin_prefix):
+            child_env["PATH"] = path[len(venv_bin_prefix) :]
+
     proc = subprocess.run(
         ["bash", "-lc", cmd],
         capture_output=True,
         text=True,
         timeout=timeout_seconds,
+        env=child_env,
     )
     return proc
 

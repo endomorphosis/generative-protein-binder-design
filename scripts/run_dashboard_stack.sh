@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Auto mode:
 # - AMD64/x86_64  -> deploy/docker-compose-dashboard.yaml (local NIM services; linux/amd64)
-# - ARM64/aarch64 -> deploy/docker-compose-dashboard-arm64-native.yaml (local ARM64-native services)
+# - ARM64/aarch64 -> deploy/docker-compose-dashboard-arm64-host-native.yaml (routes to host-native services)
 #
 # Explicit mode:
 # - --control-plane -> deploy/docker-compose-dashboard-default.yaml (dashboard+server only; configure cloud via UI)
@@ -90,7 +90,10 @@ case "$MODE" in
         COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard.yaml"
         ;;
       aarch64|arm64)
-        COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-arm64-native.yaml"
+        # Prefer the host-native stack on ARM64. The ARM64-native compose file is
+        # primarily for CI shims / containerized builds and will often conflict
+        # with host-native services bound on 18081/18082.
+        COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-arm64-host-native.yaml"
         ;;
       *)
         echo "Unsupported architecture: $ARCH" >&2

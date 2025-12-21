@@ -88,17 +88,39 @@ echo "  AlphaFold2 Tests"
 echo "=================================================================="
 echo ""
 
-if [ -d "$TOOLS_DIR/alphafold2" ]; then
-    run_test "AlphaFold2 directory exists" "[ -d '$TOOLS_DIR/alphafold2/RFdiffusion' ] || [ -d '$TOOLS_DIR/alphafold2' ]"
-    run_test "AlphaFold2 activation script exists" "[ -f '$TOOLS_DIR/alphafold2/activate.sh' ]"
-    run_test "AlphaFold2 validation script exists" "[ -f '$TOOLS_DIR/alphafold2/validate.py' ]"
-    run_test "AlphaFold2 env file exists" "[ -f '$TOOLS_DIR/alphafold2/.env' ]"
+AF_CODE_DIR="$TOOLS_DIR/alphafold2"
+AF_WRAPPER_DIR="$TOOLS_DIR/generated/alphafold2"
+AF_WRAPPER_DIR_LEGACY="$TOOLS_DIR/alphafold2"
+AF_ENV_FILE="$AF_WRAPPER_DIR/.env"
+AF_ENV_FILE_LEGACY="$AF_WRAPPER_DIR_LEGACY/.env"
+
+pick_af_env_file() {
+    if [ -f "$AF_ENV_FILE" ]; then
+        echo "$AF_ENV_FILE"
+    elif [ -f "$AF_ENV_FILE_LEGACY" ]; then
+        echo "$AF_ENV_FILE_LEGACY"
+    else
+        echo ""
+    fi
+}
+
+AF_ENV_SELECTED="$(pick_af_env_file)"
+AF_WRAPPER_SELECTED="$AF_WRAPPER_DIR"
+if [ "$AF_ENV_SELECTED" = "$AF_ENV_FILE_LEGACY" ]; then
+    AF_WRAPPER_SELECTED="$AF_WRAPPER_DIR_LEGACY"
+fi
+
+if [ -d "$AF_CODE_DIR" ] || [ -d "$AF_WRAPPER_DIR" ] || [ -d "$AF_WRAPPER_DIR_LEGACY" ]; then
+    run_test "AlphaFold2 code directory exists" "[ -d '$AF_CODE_DIR' ]"
+    run_test "AlphaFold2 activation script exists" "[ -f '$AF_WRAPPER_SELECTED/activate.sh' ]"
+    run_test "AlphaFold2 validation script exists" "[ -f '$AF_WRAPPER_SELECTED/validate.py' ]"
+    run_test "AlphaFold2 env file exists" "[ -n '$AF_ENV_SELECTED' ] && [ -f '$AF_ENV_SELECTED' ]"
     
     # Check conda environment
     if eval "$(conda shell.bash hook)" 2>/dev/null; then
         if conda env list | grep -q "alphafold2"; then
             log_test "AlphaFold2 conda environment"
-            if conda activate alphafold2 2>/dev/null && python "$TOOLS_DIR/alphafold2/validate.py"; then
+            if conda activate alphafold2 2>/dev/null && python "$AF_WRAPPER_SELECTED/validate.py"; then
                 log_success "  PASSED"
                 TESTS_PASSED=$((TESTS_PASSED + 1))
             else
@@ -115,13 +137,16 @@ if [ -d "$TOOLS_DIR/alphafold2" ]; then
     fi
     
     # Check data directory
-    if [ -f "$TOOLS_DIR/alphafold2/.env" ]; then
-        DATA_DIR=$(grep ALPHAFOLD_DATA_DIR "$TOOLS_DIR/alphafold2/.env" | cut -d'=' -f2)
+    if [ -n "$AF_ENV_SELECTED" ] && [ -f "$AF_ENV_SELECTED" ]; then
+        DATA_DIR=$(grep ALPHAFOLD_DATA_DIR "$AF_ENV_SELECTED" | cut -d'=' -f2)
         run_test "AlphaFold2 data directory exists" "[ -d '$DATA_DIR' ]"
         run_test "AlphaFold2 parameters exist" "[ -d '$DATA_DIR/params' ] && [ $(ls -1 '$DATA_DIR/params'/*.npz 2>/dev/null | wc -l) -gt 0 ]"
+        # Biologist-proof DB check (UniRef30/PDB70 are HH-suite prefix DBs, not single files).
+        run_test "AlphaFold2 databases (reduced) present" "'$PROJECT_ROOT/scripts/check_alphafold_data_dir.sh' '$DATA_DIR'"
     else
         skip_test "AlphaFold2 data directory" "No .env file"
         skip_test "AlphaFold2 parameters" "No .env file"
+        skip_test "AlphaFold2 databases (reduced) present" "No .env file"
     fi
 else
     skip_test "AlphaFold2 installation" "Not installed"
@@ -141,17 +166,42 @@ echo "  RFDiffusion Tests"
 echo "=================================================================="
 echo ""
 
+RF_CODE_DIR="$TOOLS_DIR/rfdiffusion/RFdiffusion"
+RF_WRAPPER_DIR="$TOOLS_DIR/generated/rfdiffusion"
+RF_WRAPPER_DIR_LEGACY="$TOOLS_DIR/rfdiffusion"
+RF_ENV_FILE="$RF_WRAPPER_DIR/.env"
+RF_ENV_FILE_LEGACY="$RF_WRAPPER_DIR_LEGACY/.env"
+RF_ENV_FILE_LEGACY2="$TOOLS_DIR/rfdiffusion/RFdiffusion/.env"
+
+pick_rf_env_file() {
+    if [ -f "$RF_ENV_FILE" ]; then
+        echo "$RF_ENV_FILE"
+    elif [ -f "$RF_ENV_FILE_LEGACY" ]; then
+        echo "$RF_ENV_FILE_LEGACY"
+    elif [ -f "$RF_ENV_FILE_LEGACY2" ]; then
+        echo "$RF_ENV_FILE_LEGACY2"
+    else
+        echo ""
+    fi
+}
+
+RF_ENV_SELECTED="$(pick_rf_env_file)"
+RF_WRAPPER_SELECTED="$RF_WRAPPER_DIR"
+if [ "$RF_ENV_SELECTED" = "$RF_ENV_FILE_LEGACY" ] || [ "$RF_ENV_SELECTED" = "$RF_ENV_FILE_LEGACY2" ]; then
+    RF_WRAPPER_SELECTED="$RF_WRAPPER_DIR_LEGACY"
+fi
+
 if [ -d "$TOOLS_DIR/rfdiffusion" ]; then
     run_test "RFDiffusion directory exists" "[ -d '$TOOLS_DIR/rfdiffusion/RFdiffusion' ]"
-    run_test "RFDiffusion activation script exists" "[ -f '$TOOLS_DIR/rfdiffusion/activate.sh' ]"
-    run_test "RFDiffusion validation script exists" "[ -f '$TOOLS_DIR/rfdiffusion/validate.py' ]"
-    run_test "RFDiffusion env file exists" "[ -f '$TOOLS_DIR/rfdiffusion/.env' ]"
+    run_test "RFDiffusion activation script exists" "[ -f '$RF_WRAPPER_SELECTED/activate.sh' ]"
+    run_test "RFDiffusion validation script exists" "[ -f '$RF_WRAPPER_SELECTED/validate.py' ]"
+    run_test "RFDiffusion env file exists" "[ -n '$RF_ENV_SELECTED' ] && [ -f '$RF_ENV_SELECTED' ]"
     
     # Check conda environment
     if eval "$(conda shell.bash hook)" 2>/dev/null; then
         if conda env list | grep -q "rfdiffusion"; then
             log_test "RFDiffusion conda environment"
-            if conda activate rfdiffusion 2>/dev/null && python "$TOOLS_DIR/rfdiffusion/validate.py"; then
+            if conda activate rfdiffusion 2>/dev/null && python "$RF_WRAPPER_SELECTED/validate.py"; then
                 log_success "  PASSED"
                 TESTS_PASSED=$((TESTS_PASSED + 1))
             else
@@ -168,8 +218,8 @@ if [ -d "$TOOLS_DIR/rfdiffusion" ]; then
     fi
     
     # Check models directory
-    if [ -f "$TOOLS_DIR/rfdiffusion/.env" ]; then
-        MODELS_DIR=$(grep RFDIFFUSION_MODELS "$TOOLS_DIR/rfdiffusion/.env" | cut -d'=' -f2)
+    if [ -n "$RF_ENV_SELECTED" ] && [ -f "$RF_ENV_SELECTED" ]; then
+        MODELS_DIR=$(grep RFDIFFUSION_MODELS "$RF_ENV_SELECTED" | cut -d'=' -f2)
         run_test "RFDiffusion models directory exists" "[ -d '$MODELS_DIR' ]"
         run_test "RFDiffusion models exist" "[ $(ls -1 '$MODELS_DIR'/*.pt 2>/dev/null | wc -l) -gt 0 ]"
     else
