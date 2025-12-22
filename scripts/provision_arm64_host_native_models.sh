@@ -79,6 +79,12 @@ echo "Provisioning host-native models on $ARCH"
 echo "- AlphaFold2 DB tier: $DB_TIER"
 echo
 
+echo "Ensuring AlphaFold external binaries (hmmer/hhsuite/kalign) are installed..."
+bash "$ROOT_DIR/scripts/ensure_alphafold_external_binaries.sh" || {
+  echo "ERR: Failed to ensure AlphaFold external binaries." >&2
+  exit 1
+}
+
 AF_FORCE_ARGS=()
 RF_FORCE_ARGS=()
 if [[ "$FORCE" == "1" ]]; then
@@ -122,7 +128,7 @@ Done.
 
 Next steps:
 - Start the host-native services (these will auto-load tools/*/.env):
-    ./scripts/run_arm64_native_model_services.sh
+  bash ./scripts/run_arm64_native_model_services.sh
 
 - Start the dashboard stack (routes to host ports 18081/18082):
     ./scripts/run_dashboard_stack.sh --arm64-host-native up -d --build

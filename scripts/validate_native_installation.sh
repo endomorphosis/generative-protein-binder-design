@@ -347,7 +347,7 @@ if [ $TESTS_FAILED -eq 0 ]; then
     echo "     source $PROJECT_ROOT/activate_native.sh"
     echo ""
     echo "  2. Start native services:"
-    echo "     $PROJECT_ROOT/scripts/run_arm64_native_model_services.sh"
+    echo "     bash $PROJECT_ROOT/scripts/run_arm64_native_model_services.sh"
     echo ""
     echo "  3. Start dashboard:"
     echo "     $PROJECT_ROOT/scripts/run_dashboard_stack.sh --arm64-host-native up"

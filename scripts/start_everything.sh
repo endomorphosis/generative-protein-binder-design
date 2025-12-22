@@ -112,6 +112,8 @@ start_host_native_services_if_needed() {
 
   # Provision on demand (only if requested).
   if [[ "$PROVISION" == "1" ]]; then
+    # Ensure required external binaries exist (AlphaFold shells out to these).
+    "$ROOT_DIR/scripts/ensure_alphafold_external_binaries.sh" || true
     if [[ (! -f "$af_env_file" && ! -f "$af_env_file_legacy") || (! -f "$rf_env_file" && ! -f "$rf_env_file_legacy" && ! -f "$rf_env_file_legacy2") ]]; then
       echo "Provisioning host-native tools/assets (db-tier=$DB_TIER)..."
       "$ROOT_DIR/scripts/provision_arm64_host_native_models.sh" --db-tier "$DB_TIER"
@@ -133,6 +135,7 @@ EOF
 
   # If already healthy, don't start another copy.
   if curl -fsS "http://localhost:${alphafold_port}/v1/health/ready" >/dev/null 2>&1 \
+    && curl -fsS "http://localhost:${alphafold_port}/v1/metrics" >/dev/null 2>&1 \
     && curl -fsS "http://localhost:${alphafold_multimer_port}/v1/health/ready" >/dev/null 2>&1 \
     && curl -fsS "http://localhost:${rfdiffusion_port}/v1/health/ready" >/dev/null 2>&1; then
     echo "Host-native AlphaFold2/RFDiffusion services already healthy (:${alphafold_port}, :${alphafold_multimer_port}, :${rfdiffusion_port})."
@@ -143,6 +146,26 @@ EOF
   local log_file="$ROOT_DIR/outputs/host-native-services.log"
   local pid_file="$ROOT_DIR/outputs/host-native-services.pid"
 
+  # Start a lightweight memory watchdog that evicts our DB page-cache under pressure.
+  # Safe for non-technical users: it does not lock memory and does not drop global caches.
+  local mem_pid_file="$ROOT_DIR/outputs/memory-watchdog.pid"
+  local mem_log_file="$ROOT_DIR/outputs/memory-watchdog.log"
+  if [[ -f "$mem_pid_file" ]]; then
+    local oldpid
+    oldpid="$(cat "$mem_pid_file" 2>/dev/null || true)"
+    if [[ -n "$oldpid" ]] && kill -0 "$oldpid" >/dev/null 2>&1; then
+      echo "Memory watchdog already running (pid=$oldpid)."
+    else
+      rm -f "$mem_pid_file" || true
+    fi
+  fi
+  if [[ ! -f "$mem_pid_file" ]]; then
+    echo "Starting memory watchdog in background..."
+    echo "- Logs: $mem_log_file"
+    nohup python3 "$ROOT_DIR/scripts/memory_watchdog.py" >"$mem_log_file" 2>&1 &
+    echo $! > "$mem_pid_file"
+  fi
+
   echo "Starting host-native AlphaFold2/RFDiffusion services in background..."
   echo "- Logs: $log_file"
   nohup bash "$ROOT_DIR/scripts/run_arm64_native_model_services.sh" >"$log_file" 2>&1 &
@@ -151,6 +174,7 @@ EOF
   echo "Waiting for host-native services to become healthy..."
   for _ in $(seq 1 90); do
     if curl -fsS "http://localhost:${alphafold_port}/v1/health/ready" >/dev/null 2>&1 \
+      && curl -fsS "http://localhost:${alphafold_port}/v1/metrics" >/dev/null 2>&1 \
       && curl -fsS "http://localhost:${alphafold_multimer_port}/v1/health/ready" >/dev/null 2>&1 \
       && curl -fsS "http://localhost:${rfdiffusion_port}/v1/health/ready" >/dev/null 2>&1; then
       echo "Host-native services are healthy."

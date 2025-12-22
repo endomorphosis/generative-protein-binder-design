@@ -259,7 +259,13 @@ fi
 
 if ! conda env list | grep -q "^$CONDA_ENV "; then
     log_info "Creating conda environment: $CONDA_ENV"
-    mamba create -n "$CONDA_ENV" python=3.10 -y -q
+    # On Linux aarch64 (e.g., DGX Spark), use Python 3.11 to ensure availability of
+    # JAX CUDA plugin wheels (cp311) when GPU mode is enabled.
+    if [[ "$OS" == "Linux" ]] && [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+        mamba create -n "$CONDA_ENV" python=3.11 -y -q
+    else
+        mamba create -n "$CONDA_ENV" python=3.10 -y -q
+    fi
 fi
 
 conda activate "$CONDA_ENV"
@@ -292,18 +298,6 @@ detect_gpu() {
 GPU_TYPE=$(detect_gpu)
 log_info "GPU mode: $GPU_TYPE"
 
-# On Linux ARM64, CUDA-enabled jaxlib wheels are generally not available.
-# If a GPU is present, auto-detection may select "cuda" via nvidia-smi, but the
-# installation would still fall back to CPU (or fail). Prefer CPU for out-of-box.
-if [[ "$OS" == "Linux" ]] && [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]] && [[ "$GPU_TYPE" == "cuda" ]]; then
-    if [[ "$GPU_MODE" == "cuda" ]]; then
-        log_error "CUDA was requested, but CUDA-enabled jaxlib wheels are not supported on $OS $ARCH in this installer. Use --gpu cpu."
-        exit 1
-    fi
-    log_warning "CUDA detected on $OS $ARCH, but CUDA-enabled jaxlib wheels are not available; using CPU JAX."
-    GPU_TYPE="cpu"
-fi
-
 # Step 4: Install Python dependencies
 log_step "Step 4/8: Installing Python dependencies"
 
@@ -311,27 +305,48 @@ log_info "Installing core packages..."
 mamba install -y -q numpy scipy pandas matplotlib biopython jupyter
 
 log_info "Installing JAX..."
+JAX_PIN_VERSION="0.4.26"
 case $GPU_TYPE in
     cuda)
-        # Match upstream AlphaFold requirements (tools/alphafold2/requirements.txt).
-        # Use the CUDA12 wheel index for jaxlib.
-        pip install -q --upgrade "jax==0.4.26" "jaxlib==0.4.26+cuda12.cudnn89" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+        # Linux aarch64 GPU enablement:
+        # - conda-forge provides CPU jaxlib builds only, but JAX supports CUDA via
+        #   plugin packages + user-space CUDA runtime wheels.
+        # - This avoids requiring a system-wide CUDA12 install even on CUDA13 hosts.
+        JAX_PIN_VERSION="0.5.3"
+        mamba install -y -q -c conda-forge "jax=${JAX_PIN_VERSION}" "jaxlib=${JAX_PIN_VERSION}"
+        pip install -q --upgrade \
+            "jax-cuda12-pjrt==${JAX_PIN_VERSION}" \
+            "jax-cuda12-plugin==${JAX_PIN_VERSION}" \
+            nvidia-cuda-runtime-cu12 \
+            nvidia-cublas-cu12 \
+            nvidia-cudnn-cu12
+
+        # Verify GPU backend is actually usable.
+        python - <<'PY'
+import jax
+backend = jax.default_backend()
+devices = jax.devices()
+print('jax backend:', backend)
+print('jax devices:', devices)
+if backend != 'gpu':
+    raise SystemExit('Expected JAX GPU backend after CUDA plugin install')
+PY
         ;;
     metal|cpu)
         # Prefer conda-forge builds for broad architecture support.
-        mamba install -y -q "jax=0.4.26" "jaxlib=0.4.26"
+        mamba install -y -q "jax=${JAX_PIN_VERSION}" "jaxlib=${JAX_PIN_VERSION}"
         ;;
 esac
 
 # Keep pip from upgrading JAX/JAXLIB when installing other deps.
 AF_CONSTRAINTS_FILE="/tmp/alphafold2_constraints_${CONDA_ENV}.txt"
-cat > "$AF_CONSTRAINTS_FILE" <<'EOF'
-jax==0.4.26
-jaxlib==0.4.26
+cat > "$AF_CONSTRAINTS_FILE" <<EOF
+jax==${JAX_PIN_VERSION}
+jaxlib==${JAX_PIN_VERSION}
 EOF
 
 log_info "Installing AlphaFold dependencies..."
-pip install -q -c "$AF_CONSTRAINTS_FILE" \
+python -m pip install -q -c "$AF_CONSTRAINTS_FILE" \
     dm-haiku==0.0.12 \
     ml-collections==0.1.0 \
     absl-py==1.0.0 \
@@ -348,29 +363,38 @@ except Exception:
 PY
 if [[ "$?" != "0" ]]; then
     # Prefer pip for broad wheel availability across Linux/ARM64.
-    pip install -q -c "$AF_CONSTRAINTS_FILE" "tensorflow==2.15.0" || {
-        log_error "Failed to install tensorflow==2.15.0"
+    # Use TF >=2.17 to avoid ml_dtypes conflicts with JAX 0.5.x.
+    python -m pip install -q -c "$AF_CONSTRAINTS_FILE" "tensorflow==2.17.0" || {
+        log_error "Failed to install tensorflow==2.17.0"
         exit 1
     }
 fi
 
+# Some ARM64 environments may end up with multiple TF distributions installed.
+# If tensorflow-cpu-aws is present, remove it and force-reinstall tensorflow to
+# avoid namespace-package oddities.
+if python -m pip show -q tensorflow-cpu-aws >/dev/null 2>&1; then
+    python -m pip uninstall -y -q tensorflow-cpu-aws >/dev/null 2>&1 || true
+    python -m pip install -q --upgrade --force-reinstall "tensorflow==2.17.0" || true
+fi
+
 log_info "Installing AlphaFold external binaries (hmmer/hhsuite/kalign)..."
 # AlphaFold calls out to jackhmmer/hhblits/hhsearch/kalign.
-mamba install -y -q -c conda-forge hmmer hhsuite kalign || {
-    log_error "Failed to install required external tools (hmmer/hhsuite/kalign)"
+# On linux-aarch64 these tools are typically installed via apt (conda-forge packages may be unavailable).
+bash "$ROOT_DIR/scripts/ensure_alphafold_external_binaries.sh" || {
+    log_error "Failed to install/ensure required external tools (hmmer/hhsuite/kalign)"
     exit 1
 }
 
 log_info "Installing OpenMM + pdbfixer (for relaxation import/runtime)..."
 # Even if relaxation is disabled at runtime, some AlphaFold versions import relax modules.
 # Install these to keep the environment robust.
-mamba install -y -q -c conda-forge openmm || log_warning "OpenMM install failed (relaxation may not work)"
-pip install -q pdbfixer || log_warning "pdbfixer install failed (relaxation may not work)"
+mamba install -y -q -c conda-forge openmm pdbfixer || log_warning "OpenMM/pdbfixer install failed (relaxation may not work)"
 
 # Sanity check: ensure JAX pin actually held (Haiku expects older JAX APIs).
-python - <<'PY'
+python - <<PY
 import jax, jaxlib
-expected = '0.4.26'
+expected = "${JAX_PIN_VERSION}"
 if jax.__version__ != expected or jaxlib.__version__ != expected:
     raise SystemExit(f"Expected jax/jaxlib {expected}, got jax={jax.__version__} jaxlib={jaxlib.__version__}")
 print(f"Pinned jax/jaxlib OK: {jax.__version__}")
@@ -797,9 +821,11 @@ fi
 # Create environment file for MCP server integration
 DB_PRESET_VALUE="reduced_dbs"
 BFD_FLAG_VALUE="--small_bfd_database_path=$DATA_DIR/small_bfd/bfd-first_non_consensus_sequences.fasta"
+UNIREf30_FLAG_VALUE=""
 if [ "$DB_TIER" = "full" ]; then
     DB_PRESET_VALUE="full_dbs"
     BFD_FLAG_VALUE="--bfd_database_path=$DATA_DIR/bfd/bfd_metaclust_clu_complete_id30_c90_final_seq.sorted_opt"
+    UNIREf30_FLAG_VALUE="--uniref30_database_path=$DATA_DIR/uniref30/UniRef30_2021_03"
 fi
 
 cat > "$ALPHAFOLD_INSTALL_ROOT/.env" << EOF
@@ -810,7 +836,8 @@ ALPHAFOLD_DATA_DIR=$DATA_DIR
 ALPHAFOLD_DB_TIER=$DB_TIER
 ALPHAFOLD_GPU_TYPE=$GPU_TYPE
 ALPHAFOLD_NATIVE_OUTPUT_PDB=ranked_0.pdb
-ALPHAFOLD_NATIVE_CMD="PYTHONPATH=$ALPHAFOLD_DIR:\$PYTHONPATH conda run -n $CONDA_ENV python $ALPHAFOLD_DIR/run_alphafold.py --data_dir=$DATA_DIR --db_preset=$DB_PRESET_VALUE --model_preset=monomer --models_to_relax=none --use_gpu_relax=false --max_template_date=2022-12-31 --uniref90_database_path=$DATA_DIR/uniref90/uniref90.fasta --mgnify_database_path=$DATA_DIR/mgnify/mgy_clusters_2022_05.fa --pdb70_database_path=$DATA_DIR/pdb70/pdb70 --uniref30_database_path=$DATA_DIR/uniref30/UniRef30_2021_03 $BFD_FLAG_VALUE --template_mmcif_dir=$DATA_DIR/pdb_mmcif/mmcif_files --obsolete_pdbs_path=$DATA_DIR/pdb_mmcif/obsolete.dat --uniprot_database_path=$DATA_DIR/uniprot/uniprot.fasta --pdb_seqres_database_path=$DATA_DIR/pdb_seqres/pdb_seqres.txt --fasta_paths={fasta} --output_dir={out_dir}"
+ALPHAFOLD_NATIVE_CMD="PYTHONPATH=$ALPHAFOLD_DIR:\$PYTHONPATH conda run -n $CONDA_ENV python $ALPHAFOLD_DIR/run_alphafold.py --data_dir=$DATA_DIR --db_preset=$DB_PRESET_VALUE --model_preset=monomer --models_to_relax=none --use_gpu_relax=false --max_template_date=2022-12-31 --uniref90_database_path=$DATA_DIR/uniref90/uniref90.fasta --mgnify_database_path=$DATA_DIR/mgnify/mgy_clusters_2022_05.fa --pdb70_database_path=$DATA_DIR/pdb70/pdb70 $UNIREf30_FLAG_VALUE $BFD_FLAG_VALUE --template_mmcif_dir=$DATA_DIR/pdb_mmcif/mmcif_files --obsolete_pdbs_path=$DATA_DIR/pdb_mmcif/obsolete.dat --fasta_paths={fasta} --output_dir={out_dir}"
+ALPHAFOLD_MULTIMER_NATIVE_CMD="PYTHONPATH=$ALPHAFOLD_DIR:\$PYTHONPATH conda run -n $CONDA_ENV python $ALPHAFOLD_DIR/run_alphafold.py --data_dir=$DATA_DIR --db_preset=$DB_PRESET_VALUE --model_preset=multimer --models_to_relax=none --use_gpu_relax=false --max_template_date=2022-12-31 --uniref90_database_path=$DATA_DIR/uniref90/uniref90.fasta --mgnify_database_path=$DATA_DIR/mgnify/mgy_clusters_2022_05.fa --pdb_seqres_database_path=$DATA_DIR/pdb_seqres/pdb_seqres.txt --uniprot_database_path=$DATA_DIR/uniprot/uniprot.fasta $UNIREf30_FLAG_VALUE $BFD_FLAG_VALUE --template_mmcif_dir=$DATA_DIR/pdb_mmcif/mmcif_files --obsolete_pdbs_path=$DATA_DIR/pdb_mmcif/obsolete.dat --fasta_paths={fasta} --output_dir={out_dir}"
 EOF
 
 # Final success message

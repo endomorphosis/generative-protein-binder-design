@@ -221,6 +221,8 @@ fi
 if ! conda env list | grep -q "^$CONDA_ENV "; then
     log_info "Creating conda environment: $CONDA_ENV"
     mamba create -n "$CONDA_ENV" python=3.10 -y -q
+    # Ensure pip is available inside the environment (avoid falling back to system pip / PEP 668).
+    mamba install -n "$CONDA_ENV" -y -q -c conda-forge pip setuptools wheel
 fi
 
 conda activate "$CONDA_ENV"
@@ -268,18 +270,18 @@ install_torch_with_fallbacks() {
             continue
         fi
         log_info "Trying torch==$v ($index_url)"
-        if pip install -q "torch==${v}" --index-url "$index_url"; then
+        if python -m pip install -q "torch==${v}" --index-url "$index_url"; then
             # Keep torchvision/torchaudio aligned without letting pip upgrade torch.
             case "$v" in
                 2.0.1)
-                    pip install -q "torchvision==0.15.2" "torchaudio==2.0.2" --no-deps --index-url "$index_url" || true
+                    python -m pip install -q "torchvision==0.15.2" "torchaudio==2.0.2" --no-deps --index-url "$index_url" || true
                     ;;
                 2.0.0)
-                    pip install -q "torchvision==0.15.1" "torchaudio==2.0.1" --no-deps --index-url "$index_url" || true
+                    python -m pip install -q "torchvision==0.15.1" "torchaudio==2.0.1" --no-deps --index-url "$index_url" || true
                     ;;
                 *)
                     # Best effort for other versions.
-                    pip install -q torchvision torchaudio --no-deps --index-url "$index_url" || true
+                    python -m pip install -q torchvision torchaudio --no-deps --index-url "$index_url" || true
                     ;;
             esac
             return 0
@@ -331,6 +333,14 @@ log_info "Pinned torch version in constraints: $TORCH_VERSION_FULL"
 
 log_success "PyTorch installed"
 
+# Install torchdata via pip (NOT conda) to avoid pulling a conda CPU pytorch build.
+# DGL (GraphBolt) imports torchdata.
+log_info "Installing torchdata (pip) ..."
+python -m pip install -q -c "$CONSTRAINTS_FILE" "torchdata==0.6.1" || {
+    log_warning "Failed to install torchdata==0.6.1; trying an unpinned torchdata"
+    python -m pip install -q -c "$CONSTRAINTS_FILE" torchdata || true
+}
+
 # Step 5: Install RFDiffusion and dependencies
 log_step "Step 5/7: Installing RFDiffusion"
 
@@ -366,10 +376,16 @@ cd "$RFDIFFUSION_DIR/RFdiffusion"
 
 # Install dependencies
 log_info "Installing RFDiffusion dependencies..."
-pip install -q -c "$CONSTRAINTS_FILE" \
-    numpy \
+
+# Keep NumPy < 2 for binary-extension compatibility (torch/dgl/scipy stacks).
+log_info "Installing core numeric deps via conda (numpy<2)..."
+mamba install -y -q -n "$CONDA_ENV" -c conda-forge \
+    "numpy<2" \
     scipy \
-    pandas \
+    pandas
+
+log_info "Installing Python deps via pip..."
+python -m pip install -q -c "$CONSTRAINTS_FILE" \
     biopython \
     pillow \
     requests \
@@ -377,13 +393,23 @@ pip install -q -c "$CONSTRAINTS_FILE" \
     hydra-core \
     pyrsistent \
     decorator \
-    e3nn \
+    "e3nn==0.3.3" \
     omegaconf
+
+# DGL is required by the vendored SE3Transformer stack used by RFdiffusion.
+# Install via conda for linux-aarch64 compatibility.
+log_info "Installing DGL (conda) ..."
+mamba install -y -q -n "$CONDA_ENV" -c dglteam -c conda-forge \
+    "dgl=2.1.0"
+
+# DGL GraphBolt imports pydantic.
+log_info "Installing pydantic (conda) ..."
+mamba install -y -q -n "$CONDA_ENV" -c conda-forge pydantic
 
 # Install RFDiffusion in development mode.
 # RFdiffusion declares a dependency on "se3-transformer" which is not published on PyPI.
 # We install SE3Transformer from git below, so avoid pip trying (and failing) to resolve it.
-pip install -q -e . --no-deps
+python -m pip install -q -e . --no-deps
 
 log_success "RFDiffusion installed"
 
@@ -396,7 +422,7 @@ if [ ! -d "$SE3_LOCAL_DIR" ]; then
     exit 1
 fi
 
-pip install -q -e "$SE3_LOCAL_DIR"
+python -m pip install -q -e "$SE3_LOCAL_DIR"
 log_success "SE3 Transformer installed"
 
 # Step 6: Download model weights
@@ -601,7 +627,10 @@ RFDIFFUSION_CONDA_ENV=$CONDA_ENV
 RFDIFFUSION_DIR=$RFDIFFUSION_INSTALL_ROOT/RFdiffusion
 RFDIFFUSION_MODELS=$MODELS_DIR
 RFDIFFUSION_GPU_TYPE=$GPU_TYPE
-RFDIFFUSION_NATIVE_CMD='$RFDIFFUSION_INSTALL_ROOT/run_rfdiffusion.sh inference.input_pdb={target_pdb} inference.output_prefix={out_dir}/design_{design_id} inference.num_designs=1'
+# NOTE: RFdiffusion requires a contig specification; use a safe default if the caller doesn't provide one.
+# This default is a generic "design 50-50 residues" contig. More complex binder-target contigs can be
+# configured by overriding RFDIFFUSION_NATIVE_CMD after install.
+RFDIFFUSION_NATIVE_CMD='$RFDIFFUSION_INSTALL_ROOT/run_rfdiffusion.sh contigmap.contigs=[50-50] inference.input_pdb={target_pdb} inference.output_prefix={out_dir}/design_{design_id} inference.num_designs=1'
 EOF
 
 # Final success message

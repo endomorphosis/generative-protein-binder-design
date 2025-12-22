@@ -55,6 +55,30 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 stop_host_native_services_if_present() {
   local pid_file="$ROOT_DIR/outputs/host-native-services.pid"
   local log_file="$ROOT_DIR/outputs/host-native-services.log"
+  local mem_pid_file="$ROOT_DIR/outputs/memory-watchdog.pid"
+  local mem_log_file="$ROOT_DIR/outputs/memory-watchdog.log"
+
+  # Stop memory watchdog first so it doesn't fight teardown.
+  if [[ -f "$mem_pid_file" ]]; then
+    local mpid
+    mpid="$(cat "$mem_pid_file" 2>/dev/null || true)"
+    if [[ -n "$mpid" ]] && kill -0 "$mpid" >/dev/null 2>&1; then
+      echo "Stopping memory watchdog (pid=$mpid)..."
+      kill "$mpid" >/dev/null 2>&1 || true
+      for _ in $(seq 1 20); do
+        if kill -0 "$mpid" >/dev/null 2>&1; then
+          sleep 0.2
+        else
+          break
+        fi
+      done
+      if kill -0 "$mpid" >/dev/null 2>&1; then
+        kill -9 "$mpid" >/dev/null 2>&1 || true
+      fi
+      echo "Memory watchdog stopped. Logs were at: $mem_log_file"
+    fi
+    rm -f "$mem_pid_file" || true
+  fi
 
   if [[ ! -f "$pid_file" ]]; then
     # Nothing to stop (or was started manually).

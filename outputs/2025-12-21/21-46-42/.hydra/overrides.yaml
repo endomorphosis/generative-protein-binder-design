@@ -1,0 +1,5 @@
+- inference.model_directory_path=/home/barberb/.cache/rfdiffusion/models
+- contigmap.contigs=[50-50]
+- inference.input_pdb=/tmp/rfdiffusion_native_ogrws2ta/target.pdb
+- inference.output_prefix=/tmp/rfdiffusion_native_ogrws2ta/out/design_0
+- inference.num_designs=1

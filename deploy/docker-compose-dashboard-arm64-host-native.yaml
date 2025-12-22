@@ -44,6 +44,9 @@ services:
       - MCP_ROUTING_MODE=${MCP_ROUTING_MODE:-fallback}
       - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-nim,external,embedded}
 
+      # AlphaFold CPU runs can take a long time; avoid premature httpx ReadTimeout.
+      - MCP_NIM_INFERENCE_TIMEOUT_S=${MCP_NIM_INFERENCE_TIMEOUT_S:-10800}
+
       # Run MCP server on the expected host port when using host networking.
       - PORT=${MCP_SERVER_HOST_PORT:-8011}
 

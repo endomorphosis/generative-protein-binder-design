@@ -41,7 +41,10 @@ def design(req: DesignRequest):
 
     cmd_template = require_env("RFDIFFUSION_NATIVE_CMD")
     timeout = int(env_str("RFDIFFUSION_NATIVE_TIMEOUT_SECONDS", "7200") or "7200")
-    output_template = env_str("RFDIFFUSION_NATIVE_OUTPUT_PDB", "design_{design_id}.pdb") or "design_{design_id}.pdb"
+    # RFdiffusion's run_inference.py writes files as: {output_prefix}_{i_des}.pdb.
+    # Our default command template sets output_prefix={out_dir}/design_{design_id} and num_designs=1,
+    # so the produced file is typically design_{design_id}_0.pdb.
+    output_template = env_str("RFDIFFUSION_NATIVE_OUTPUT_PDB", "design_{design_id}_0.pdb") or "design_{design_id}_0.pdb"
 
     models_dir = env_str("RFDIFFUSION_MODELS_DIR")
 
@@ -64,7 +67,10 @@ def design(req: DesignRequest):
             except Exception as exc:
                 raise HTTPException(status_code=500, detail=f"Invalid RFDIFFUSION_NATIVE_CMD template: {exc}")
 
-            proc = run_cmd(cmd, timeout_seconds=timeout)
+            try:
+                proc = run_cmd(cmd, timeout_seconds=timeout)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=503, detail=str(exc))
             if proc.returncode != 0:
                 stderr = (proc.stderr or "").strip()
                 stdout = (proc.stdout or "").strip()

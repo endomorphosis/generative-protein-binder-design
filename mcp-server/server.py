@@ -12,6 +12,7 @@ Supports multiple backends:
 import os
 import json
 import asyncio
+import contextlib
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
@@ -224,9 +225,26 @@ class JobStatus(BaseModel):
     created_at: str
     updated_at: str
     job_name: Optional[str] = None
+    current_stage: Optional[str] = None
+    progress_pct: Optional[float] = None
+    progress_message: Optional[str] = None
     progress: Dict[str, Any]
     results: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    error_detail: Optional[str] = None
+    metrics: Optional[Dict[str, Any]] = None
+
+
+def _public_job_dict(job: Dict[str, Any], *, include_error_detail: bool = False) -> Dict[str, Any]:
+    """Return a client-safe job dict.
+
+    By default, hides verbose error output (error_detail) which can be huge and
+    noisy for dashboards/CLI.
+    """
+    data = dict(job)
+    if not include_error_detail:
+        data.pop("error_detail", None)
+    return data
 
 class ToolInfo(BaseModel):
     name: str
@@ -538,17 +556,18 @@ async def mcp_jsonrpc(request: Request) -> Dict[str, Any]:
                     },
                     "results": None,
                     "error": None,
+                    "metrics": None,
                 }
                 jobs_db[job_id] = job
                 try:
-                    asyncio.create_task(broadcast_event({"type": "job.created", "job": job}))
+                    asyncio.create_task(broadcast_event({"type": "job.created", "job": _public_job_dict(job)}))
                 except Exception:
                     pass
                 asyncio.create_task(process_job(job_id))
                 return _jsonrpc_result(
                     msg_id,
                     {
-                        "content": [{"type": "text", "text": json.dumps(JobStatus(**job).model_dump(), indent=2)}],
+                        "content": [{"type": "text", "text": json.dumps(JobStatus(**job).model_dump(exclude_unset=True), indent=2)}],
                         "isError": False,
                     },
                 )
@@ -557,14 +576,15 @@ async def mcp_jsonrpc(request: Request) -> Dict[str, Any]:
                 job_id = arguments.get("job_id")
                 if not job_id or job_id not in jobs_db:
                     return _jsonrpc_error(msg_id, -32004, "Job not found")
-                job = JobStatus(**jobs_db[job_id]).model_dump()
+                include_error_detail = bool(arguments.get("include_error_detail")) if isinstance(arguments, dict) else False
+                job = JobStatus(**_public_job_dict(jobs_db[job_id], include_error_detail=include_error_detail)).model_dump(exclude_unset=True)
                 return _jsonrpc_result(
                     msg_id,
                     {"content": [{"type": "text", "text": json.dumps(job, indent=2)}], "isError": False},
                 )
 
             if name == "list_jobs":
-                jobs = [JobStatus(**j).model_dump() for j in jobs_db.values()]
+                jobs = [JobStatus(**_public_job_dict(j)).model_dump(exclude_unset=True) for j in jobs_db.values()]
                 return _jsonrpc_result(
                     msg_id,
                     {"content": [{"type": "text", "text": json.dumps(jobs, indent=2)}], "isError": False},
@@ -576,7 +596,7 @@ async def mcp_jsonrpc(request: Request) -> Dict[str, Any]:
                     return _jsonrpc_error(msg_id, -32004, "Job not found")
                 deleted = jobs_db.pop(job_id)
                 try:
-                    asyncio.create_task(broadcast_event({"type": "job.deleted", "job": deleted}))
+                    asyncio.create_task(broadcast_event({"type": "job.deleted", "job": _public_job_dict(deleted)}))
                 except Exception:
                     pass
                 return _jsonrpc_result(
@@ -694,7 +714,7 @@ async def get_resource(job_id: str) -> Dict[str, Any]:
     }
 
 # Job management endpoints
-@app.post("/api/jobs", response_model=JobStatus)
+@app.post("/api/jobs", response_model=JobStatus, response_model_exclude_unset=True)
 async def create_job(
     input_data: ProteinSequenceInput,
     background_tasks: BackgroundTasks
@@ -708,6 +728,9 @@ async def create_job(
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
         "job_name": input_data.job_name,
+        "current_stage": None,
+        "progress_pct": 0.0,
+        "progress_message": "Created",
         "input": {
             "sequence": input_data.sequence,
             "num_designs": input_data.num_designs
@@ -719,14 +742,15 @@ async def create_job(
             "alphafold_multimer": "pending"
         },
         "results": None,
-        "error": None
+        "error": None,
+        "metrics": None,
     }
     
     jobs_db[job_id] = job
     
     # notify subscribers about new job
     try:
-        asyncio.create_task(broadcast_event({"type": "job.created", "job": job}))
+        asyncio.create_task(broadcast_event({"type": "job.created", "job": _public_job_dict(job)}))
     except Exception:
         pass
     # Start job processing in background
@@ -734,17 +758,52 @@ async def create_job(
     
     return JobStatus(**job)
 
-@app.get("/api/jobs", response_model=List[JobStatus])
+@app.get("/api/jobs", response_model=List[JobStatus], response_model_exclude_unset=True)
 async def list_jobs() -> List[JobStatus]:
     """List all jobs"""
-    return [JobStatus(**job) for job in jobs_db.values()]
+    return [JobStatus(**_public_job_dict(job)) for job in jobs_db.values()]
 
-@app.get("/api/jobs/{job_id}", response_model=JobStatus)
-async def get_job(job_id: str) -> JobStatus:
-    """Get job status"""
+@app.get("/api/jobs/{job_id}", response_model=JobStatus, response_model_exclude_unset=True)
+async def get_job(
+    job_id: str,
+    include_metrics: bool = True,
+    include_residency: bool = False,
+    include_error_detail: bool = False,
+) -> JobStatus:
+    """Get job status.
+
+    include_metrics:
+      Adds lightweight host metrics when the host-native AlphaFold service is reachable.
+    include_residency:
+      Also requests a (slower) best-effort page-cache residency estimate for key DB files.
+    """
     if job_id not in jobs_db:
         raise HTTPException(status_code=404, detail="Job not found")
-    return JobStatus(**jobs_db[job_id])
+
+    job = dict(jobs_db[job_id])
+
+    if include_metrics:
+        try:
+            import httpx
+
+            params = {"include_residency": "1" if include_residency else "0"}
+            # Keep this fast; dashboard polls frequently.
+            async with httpx.AsyncClient(timeout=1.5) as client:
+                r = await client.get("http://127.0.0.1:18081/v1/metrics", params=params)
+                if r.status_code == 200:
+                    existing_metrics = job.get("metrics") or {}
+                    alphafold_metrics = existing_metrics.get("alphafold_host")
+                    if not isinstance(alphafold_metrics, dict):
+                        alphafold_metrics = {}
+                    alphafold_metrics["latest"] = r.json()
+                    alphafold_metrics["latest_at"] = datetime.now().isoformat()
+                    existing_metrics["alphafold_host"] = alphafold_metrics
+                    job["metrics"] = existing_metrics
+        except Exception:
+            # Metrics are best-effort; never break job polling.
+            pass
+
+    return JobStatus(**_public_job_dict(job, include_error_detail=include_error_detail))
 
 @app.delete("/api/jobs/{job_id}")
 async def delete_job(job_id: str) -> Dict[str, str]:
@@ -798,52 +857,189 @@ async def mcp_sse_endpoint(request: Request):
     return await sse_endpoint(request)
 
 # Background job processing
+def _job_touch(job: Dict[str, Any]) -> None:
+    job["updated_at"] = datetime.now().isoformat()
+
+
+def _job_set_progress(job: Dict[str, Any], *, stage: str, pct: float, message: str) -> None:
+    job["current_stage"] = stage
+    job["progress_pct"] = round(float(pct), 2)
+    job["progress_message"] = message
+    _job_touch(job)
+
+
+def _summarize_error(exc: BaseException, *, max_len: int = 500) -> str:
+    """Create a short, UI-safe error string for job status fields.
+
+    Full details should remain available in server logs.
+    """
+    try:
+        if isinstance(exc, HTTPException):
+            raw = f"HTTP {exc.status_code}: {exc.detail}"
+        else:
+            raw = str(exc)
+    except Exception:
+        raw = type(exc).__name__
+
+    raw = (raw or type(exc).__name__).strip()
+    # Collapse whitespace/newlines so progress/job JSON stays compact.
+    raw = " ".join(raw.split())
+
+    if max_len > 0 and len(raw) > max_len:
+        raw = raw[: max(0, max_len - 14)].rstrip() + " …(truncated)"
+    return raw
+
+
+def _error_detail(exc: BaseException, *, max_len: int = 20000) -> str:
+    """Best-effort full error text for debugging.
+
+    Intended to be returned only on explicit request (include_error_detail=1).
+    """
+    try:
+        raw = str(exc)
+    except Exception:
+        raw = repr(exc)
+    raw = raw or type(exc).__name__
+    if max_len > 0 and len(raw) > max_len:
+        raw = raw[: max(0, max_len - 14)].rstrip() + " …(truncated)"
+    return raw
+
+
+async def _cancel_and_await(task: Optional[asyncio.Task]) -> None:
+    if task is None:
+        return
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+def _job_metrics(job: Dict[str, Any]) -> Dict[str, Any]:
+    metrics = job.get("metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+        job["metrics"] = metrics
+    return metrics
+
+
+def _stage_metrics(job: Dict[str, Any]) -> Dict[str, Any]:
+    metrics = _job_metrics(job)
+    stages = metrics.get("stages")
+    if not isinstance(stages, dict):
+        stages = {}
+        metrics["stages"] = stages
+    return stages
+
+
+async def _job_heartbeat(job: Dict[str, Any], interval_s: float = 10.0) -> None:
+    while True:
+        await asyncio.sleep(interval_s)
+        _job_touch(job)
+
+
+async def _alphafold_host_snapshot(include_residency: bool = False) -> Optional[Dict[str, Any]]:
+    try:
+        import httpx
+
+        params = {"include_residency": "1" if include_residency else "0"}
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get("http://127.0.0.1:18081/v1/metrics", params=params)
+            if r.status_code == 200:
+                return r.json()
+    except Exception:
+        return None
+    return None
+
+
 async def process_job(job_id: str):
     """Process a protein binder design job using configured backend"""
     try:
         model_backend = backend_manager.get()
         job = jobs_db[job_id]
         job["status"] = "running"
-        job["updated_at"] = datetime.now().isoformat()
+        _job_set_progress(job, stage="starting", pct=0, message="Starting job")
         try:
-            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": _public_job_dict(job)}))
         except Exception:
             pass
         
         sequence = job["input"]["sequence"]
         num_designs = job["input"]["num_designs"]
+
+        # Optional: store richer (slower) residency sampling in job metrics snapshots.
+        include_residency = (os.getenv("MCP_JOB_INCLUDE_RESIDENCY") or "0").strip() in ("1", "true", "yes")
         
         # Step 1: AlphaFold2 - predict structure of target
         logger.info(f"Job {job_id}: Running AlphaFold2")
         job["progress"]["alphafold"] = "running"
+        _job_set_progress(job, stage="alphafold", pct=5, message="Running AlphaFold2")
+        stages = _stage_metrics(job)
+        stage_started = datetime.now().isoformat()
+        stages["alphafold"] = {"started_at": stage_started, "status": "running"}
+
+        # Capture a pre-snapshot (useful for cache warmth / MemAvailable) before AlphaFold starts.
+        metrics = _job_metrics(job)
+        alphafold_host = metrics.get("alphafold_host")
+        if not isinstance(alphafold_host, dict):
+            alphafold_host = {}
+            metrics["alphafold_host"] = alphafold_host
+        alphafold_host["pre"] = await _alphafold_host_snapshot(include_residency=include_residency)
+        alphafold_host["pre_at"] = datetime.now().isoformat()
+
+        hb_task: Optional[asyncio.Task] = asyncio.create_task(_job_heartbeat(job))
         
         try:
             alphafold_result = await model_backend.predict_structure(sequence)
             job["progress"]["alphafold"] = "completed"
             logger.info(f"Job {job_id}: AlphaFold2 completed")
         except Exception as e:
-            logger.error(f"AlphaFold2 error: {e}")
-            job["progress"]["alphafold"] = f"error: {str(e)}"
+            logger.exception("AlphaFold2 error")
+            short = _summarize_error(e)
+            job["error_detail"] = _error_detail(e)
+            job["progress"]["alphafold"] = f"error: {short}"
             if allow_mock_outputs():
                 # For CI/demo only
                 alphafold_result = {"pdb": "mock_structure"}
             else:
+                await _cancel_and_await(hb_task)
                 job["status"] = "failed"
-                job["error"] = f"AlphaFold2 failed: {e}"
-                job["updated_at"] = datetime.now().isoformat()
+                job["error"] = f"AlphaFold2 failed: {short}"
+                _job_set_progress(job, stage="alphafold", pct=5, message=f"AlphaFold2 failed: {short}")
+                stages["alphafold"].update({"ended_at": datetime.now().isoformat(), "status": "failed"})
                 try:
-                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": job}))
+                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": _public_job_dict(job)}))
                 except Exception:
                     pass
                 return
+        finally:
+            await _cancel_and_await(hb_task)
+
+        # Post snapshot after AlphaFold completes.
+        alphafold_host["post"] = await _alphafold_host_snapshot(include_residency=include_residency)
+        alphafold_host["post_at"] = datetime.now().isoformat()
+
+        stage_ended = datetime.now().isoformat()
+        stages["alphafold"].update({"ended_at": stage_ended, "status": "completed"})
         try:
-            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+            start_dt = datetime.fromisoformat(stage_started)
+            end_dt = datetime.fromisoformat(stage_ended)
+            stages["alphafold"]["duration_s"] = (end_dt - start_dt).total_seconds()
+        except Exception:
+            pass
+
+        _job_set_progress(job, stage="alphafold", pct=25, message="AlphaFold2 completed")
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": _public_job_dict(job)}))
         except Exception:
             pass
         
         # Step 2: RFDiffusion - generate binder backbones
         logger.info(f"Job {job_id}: Running RFDiffusion")
         job["progress"]["rfdiffusion"] = "running"
+        _job_set_progress(job, stage="rfdiffusion", pct=30, message="Running RFDiffusion")
+        stage_started = datetime.now().isoformat()
+        stages["rfdiffusion"] = {"started_at": stage_started, "status": "running"}
+
+        hb_task = asyncio.create_task(_job_heartbeat(job))
         
         try:
             rfdiffusion_result = await model_backend.design_binder_backbone(
@@ -853,61 +1049,113 @@ async def process_job(job_id: str):
             job["progress"]["rfdiffusion"] = "completed"
             logger.info(f"Job {job_id}: RFDiffusion completed")
         except Exception as e:
-            logger.error(f"RFDiffusion error: {e}")
-            job["progress"]["rfdiffusion"] = f"error: {str(e)}"
+            logger.exception("RFDiffusion error")
+            short = _summarize_error(e)
+            job["error_detail"] = _error_detail(e)
+            job["progress"]["rfdiffusion"] = f"error: {short}"
             if allow_mock_outputs():
                 rfdiffusion_result = {"designs": [{"pdb": f"mock_design_{i}"} for i in range(num_designs)]}
             else:
+                await _cancel_and_await(hb_task)
                 job["status"] = "failed"
-                job["error"] = f"RFDiffusion failed: {e}"
-                job["updated_at"] = datetime.now().isoformat()
+                job["error"] = f"RFDiffusion failed: {short}"
+                _job_set_progress(job, stage="rfdiffusion", pct=30, message=f"RFDiffusion failed: {short}")
+                stages["rfdiffusion"].update({"ended_at": datetime.now().isoformat(), "status": "failed"})
                 try:
-                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": job}))
+                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": _public_job_dict(job)}))
                 except Exception:
                     pass
                 return
+        finally:
+            await _cancel_and_await(hb_task)
+
+        stage_ended = datetime.now().isoformat()
+        stages["rfdiffusion"].update({"ended_at": stage_ended, "status": "completed"})
         try:
-            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+            start_dt = datetime.fromisoformat(stage_started)
+            end_dt = datetime.fromisoformat(stage_ended)
+            stages["rfdiffusion"]["duration_s"] = (end_dt - start_dt).total_seconds()
+        except Exception:
+            pass
+
+        _job_set_progress(job, stage="rfdiffusion", pct=50, message="RFDiffusion completed")
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": _public_job_dict(job)}))
         except Exception:
             pass
         
         # Step 3: ProteinMPNN - generate sequences for backbones
         logger.info(f"Job {job_id}: Running ProteinMPNN")
         job["progress"]["proteinmpnn"] = "running"
+        _job_set_progress(job, stage="proteinmpnn", pct=55, message="Running ProteinMPNN")
+        stage_started = datetime.now().isoformat()
+        stages["proteinmpnn"] = {"started_at": stage_started, "status": "running"}
+
+        hb_task = asyncio.create_task(_job_heartbeat(job))
         
         try:
             mpnn_results = []
-            for design in rfdiffusion_result.get("designs", [])[:num_designs]:
+            designs = rfdiffusion_result.get("designs", [])[:num_designs]
+            for i, design in enumerate(designs):
+                # Provide a smooth-ish progress bar within the ProteinMPNN stage.
+                if num_designs > 0:
+                    pct = 55 + (20.0 * ((i) / max(1, num_designs)))
+                    _job_set_progress(job, stage="proteinmpnn", pct=pct, message=f"ProteinMPNN {i+1}/{num_designs}")
                 mpnn_result = await model_backend.generate_sequence(design.get("pdb", ""))
                 mpnn_results.append(mpnn_result)
             job["progress"]["proteinmpnn"] = "completed"
             logger.info(f"Job {job_id}: ProteinMPNN completed")
         except Exception as e:
-            logger.error(f"ProteinMPNN error: {e}")
-            job["progress"]["proteinmpnn"] = f"error: {str(e)}"
+            logger.exception("ProteinMPNN error")
+            short = _summarize_error(e)
+            job["error_detail"] = _error_detail(e)
+            job["progress"]["proteinmpnn"] = f"error: {short}"
             if allow_mock_outputs():
                 mpnn_results = [{"sequence": f"MOCK_SEQ_{i}"} for i in range(num_designs)]
             else:
+                await _cancel_and_await(hb_task)
                 job["status"] = "failed"
-                job["error"] = f"ProteinMPNN failed: {e}"
-                job["updated_at"] = datetime.now().isoformat()
+                job["error"] = f"ProteinMPNN failed: {short}"
+                _job_set_progress(job, stage="proteinmpnn", pct=55, message=f"ProteinMPNN failed: {short}")
+                stages["proteinmpnn"].update({"ended_at": datetime.now().isoformat(), "status": "failed"})
                 try:
-                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": job}))
+                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": _public_job_dict(job)}))
                 except Exception:
                     pass
                 return
+        finally:
+            await _cancel_and_await(hb_task)
+
+        stage_ended = datetime.now().isoformat()
+        stages["proteinmpnn"].update({"ended_at": stage_ended, "status": "completed"})
         try:
-            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+            start_dt = datetime.fromisoformat(stage_started)
+            end_dt = datetime.fromisoformat(stage_ended)
+            stages["proteinmpnn"]["duration_s"] = (end_dt - start_dt).total_seconds()
+        except Exception:
+            pass
+
+        _job_set_progress(job, stage="proteinmpnn", pct=75, message="ProteinMPNN completed")
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": _public_job_dict(job)}))
         except Exception:
             pass
         
         # Step 4: AlphaFold2-Multimer - predict complex structures
         logger.info(f"Job {job_id}: Running AlphaFold2-Multimer")
         job["progress"]["alphafold_multimer"] = "running"
+        _job_set_progress(job, stage="alphafold_multimer", pct=80, message="Running AlphaFold2-Multimer")
+        stage_started = datetime.now().isoformat()
+        stages["alphafold_multimer"] = {"started_at": stage_started, "status": "running"}
+
+        hb_task = asyncio.create_task(_job_heartbeat(job))
         
         try:
             multimer_results = []
             for i, mpnn_result in enumerate(mpnn_results[:num_designs]):
+                if num_designs > 0:
+                    pct = 80 + (20.0 * ((i) / max(1, num_designs)))
+                    _job_set_progress(job, stage="alphafold_multimer", pct=pct, message=f"AlphaFold2-Multimer {i+1}/{num_designs}")
                 multimer_result = await model_backend.predict_complex([
                     sequence,
                     mpnn_result.get("sequence", "")
@@ -916,21 +1164,38 @@ async def process_job(job_id: str):
             job["progress"]["alphafold_multimer"] = "completed"
             logger.info(f"Job {job_id}: AlphaFold2-Multimer completed")
         except Exception as e:
-            logger.error(f"AlphaFold2-Multimer error: {e}")
-            job["progress"]["alphafold_multimer"] = f"error: {str(e)}"
+            logger.exception("AlphaFold2-Multimer error")
+            short = _summarize_error(e)
+            job["error_detail"] = _error_detail(e)
+            job["progress"]["alphafold_multimer"] = f"error: {short}"
             if allow_mock_outputs():
                 multimer_results = [{"pdb": f"mock_complex_{i}"} for i in range(num_designs)]
             else:
+                await _cancel_and_await(hb_task)
                 job["status"] = "failed"
-                job["error"] = f"AlphaFold2-Multimer failed: {e}"
-                job["updated_at"] = datetime.now().isoformat()
+                job["error"] = f"AlphaFold2-Multimer failed: {short}"
+                _job_set_progress(job, stage="alphafold_multimer", pct=80, message=f"AlphaFold2-Multimer failed: {short}")
+                stages["alphafold_multimer"].update({"ended_at": datetime.now().isoformat(), "status": "failed"})
                 try:
-                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": job}))
+                    asyncio.create_task(broadcast_event({"type": "job.failed", "job": _public_job_dict(job)}))
                 except Exception:
                     pass
                 return
+        finally:
+            await _cancel_and_await(hb_task)
+
+        stage_ended = datetime.now().isoformat()
+        stages["alphafold_multimer"].update({"ended_at": stage_ended, "status": "completed"})
         try:
-            asyncio.create_task(broadcast_event({"type": "job.updated", "job": job}))
+            start_dt = datetime.fromisoformat(stage_started)
+            end_dt = datetime.fromisoformat(stage_ended)
+            stages["alphafold_multimer"]["duration_s"] = (end_dt - start_dt).total_seconds()
+        except Exception:
+            pass
+
+        _job_set_progress(job, stage="alphafold_multimer", pct=100, message="AlphaFold2-Multimer completed")
+        try:
+            asyncio.create_task(broadcast_event({"type": "job.updated", "job": _public_job_dict(job)}))
         except Exception:
             pass
         
@@ -949,17 +1214,30 @@ async def process_job(job_id: str):
         }
         
         job["status"] = "completed"
-        job["updated_at"] = datetime.now().isoformat()
+        _job_set_progress(job, stage="completed", pct=100, message="Job completed")
         logger.info(f"Job {job_id}: Completed successfully")
         try:
-            asyncio.create_task(broadcast_event({"type": "job.completed", "job": job}))
+            asyncio.create_task(broadcast_event({"type": "job.completed", "job": _public_job_dict(job)}))
         except Exception:
             pass
-    except Exception as e:
-        logger.error(f"Job {job_id} failed: {e}")
-        job["status"] = "failed"
-        job["error"] = str(e)
-        job["updated_at"] = datetime.now().isoformat()
+    except asyncio.CancelledError:
+        # If the server is shutting down or the task was cancelled, report a terminal state.
+        logger.warning(f"Job {job_id} cancelled")
+        job = jobs_db.get(job_id, {})
+        if isinstance(job, dict):
+            job["status"] = "failed"
+            job["error"] = "Job cancelled"
+            _job_set_progress(job, stage=job.get("current_stage") or "cancelled", pct=float(job.get("progress_pct") or 0), message="Job cancelled")
+        raise
+    except BaseException as e:
+        logger.exception("Job %s failed", job_id)
+        job = jobs_db.get(job_id, {})
+        if isinstance(job, dict):
+            job["status"] = "failed"
+            short = _summarize_error(e)
+            job["error"] = short
+            job["error_detail"] = _error_detail(e)
+            _job_set_progress(job, stage=job.get("current_stage") or "failed", pct=float(job.get("progress_pct") or 0), message=f"Job failed: {short}")
 
 if __name__ == "__main__":
     import uvicorn

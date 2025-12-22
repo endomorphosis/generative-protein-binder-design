@@ -86,8 +86,13 @@ class NIMBackend(ModelBackend):
         # Inference requests can take a long time, but connectivity issues should
         # fail quickly so users get actionable errors instead of hanging jobs.
         connect_timeout_s = float(os.getenv("MCP_NIM_CONNECT_TIMEOUT_S", "5"))
+        # Backends like AlphaFold can legitimately take hours (especially CPU runs).
+        # Default to a generous timeout, but allow environments to override.
+        inference_timeout_s = float(
+            os.getenv("MCP_NIM_INFERENCE_TIMEOUT_S", os.getenv("MCP_NIM_TIMEOUT_S", "7200"))
+        )
         self._inference_timeout = httpx.Timeout(
-            timeout=600.0,
+            timeout=inference_timeout_s,
             connect=connect_timeout_s,
         )
 
@@ -1116,6 +1121,9 @@ class FallbackBackend(ModelBackend):
                 last_exc = exc
                 raw = str(exc).strip()
                 msg = " ".join(raw.split()) if raw else type(exc).__name__
+                # Keep the job-visible error small; full details should be in logs.
+                if len(msg) > 400:
+                    msg = msg[:386].rstrip() + " …(truncated)"
                 errors.append(f"{provider_name}: {msg}")
                 logger.warning("Provider %s failed for %s: %s", provider_name, fn_name, exc)
                 continue

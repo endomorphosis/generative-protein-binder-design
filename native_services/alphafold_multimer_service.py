@@ -7,13 +7,62 @@ from typing import List
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from .common import env_str, require_env, run_cmd, ensure_file_exists, read_text
+from .common import (
+    env_str,
+    require_env,
+    run_cmd,
+    ensure_file_exists,
+    read_text,
+    available_cpu_count,
+    nvidia_gpu_present,
+)
 
 app = FastAPI(title="AlphaFold2-Multimer Native Service", version="1.0.0")
 
 
 class ComplexRequest(BaseModel):
     sequences: List[str] = Field(..., description="Protein chain sequences")
+
+
+def _maybe_inject_runtime_flags(cmd: str) -> str:
+    msa_n_cpu_raw = env_str("ALPHAFOLD_MSA_N_CPU")
+    msa_n_cpu_max_raw = env_str("ALPHAFOLD_MSA_N_CPU_MAX")
+
+    try:
+        msa_n_cpu = int(msa_n_cpu_raw) if msa_n_cpu_raw else available_cpu_count()
+    except Exception:
+        msa_n_cpu = available_cpu_count()
+
+    if msa_n_cpu_max_raw:
+        try:
+            msa_n_cpu = min(msa_n_cpu, int(msa_n_cpu_max_raw))
+        except Exception:
+            pass
+
+    msa_n_cpu = max(1, msa_n_cpu)
+
+    if "--jackhmmer_n_cpu" not in cmd:
+        cmd += f" --jackhmmer_n_cpu={msa_n_cpu}"
+    if "--hmmsearch_n_cpu" not in cmd:
+        cmd += f" --hmmsearch_n_cpu={msa_n_cpu}"
+    if "--hhsearch_n_cpu" not in cmd:
+        cmd += f" --hhsearch_n_cpu={msa_n_cpu}"
+
+    use_gpu_relax = (env_str("ALPHAFOLD_USE_GPU_RELAX", "auto") or "auto").strip().lower()
+    if use_gpu_relax in {"1", "true", "yes", "y", "on", "auto"}:
+        if use_gpu_relax != "auto" or nvidia_gpu_present():
+            if "--use_gpu_relax=true" not in cmd:
+                if "--use_gpu_relax=false" in cmd:
+                    cmd = cmd.replace("--use_gpu_relax=false", "--use_gpu_relax=true")
+                elif "--use_gpu_relax" not in cmd:
+                    cmd += " --use_gpu_relax=true"
+
+    try:
+        print(f"[alphafold_multimer_service] msa_n_cpu={msa_n_cpu} gpu_present={nvidia_gpu_present()}")
+    except Exception:
+        pass
+
+    return cmd
 
 
 def _ready_reason() -> str | None:
@@ -67,7 +116,12 @@ def structure(req: ComplexRequest):
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Invalid ALPHAFOLD_MULTIMER_NATIVE_CMD template: {exc}")
 
-        proc = run_cmd(cmd, timeout_seconds=timeout)
+        cmd = _maybe_inject_runtime_flags(cmd)
+
+        try:
+            proc = run_cmd(cmd, timeout_seconds=timeout)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
         if proc.returncode != 0:
             stderr = (proc.stderr or "").strip()
             stdout = (proc.stdout or "").strip()

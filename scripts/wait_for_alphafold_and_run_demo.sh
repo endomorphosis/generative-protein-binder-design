@@ -242,6 +242,59 @@ if [[ "$rc" != "0" ]]; then
   ) >>"$OUT_LOG" 2>&1
 fi
 
+# Ensure TensorFlow is installed (AlphaFold imports tensorflow.compat.v1).
+echo "[$(date -Is)] Ensuring TensorFlow is installed in conda env alphafold2..." | tee -a "$OUT_LOG"
+set +e
+(
+  eval "$(conda shell.bash hook)" && conda activate alphafold2 && \
+  python -c 'import tensorflow as tf; print("tensorflow ok", tf.__version__)'
+) >>"$OUT_LOG" 2>&1
+rc=$?
+set -e
+if [[ "$rc" != "0" ]]; then
+  (
+    eval "$(conda shell.bash hook)" && conda activate alphafold2 && \
+    JAX_VER="$(python -c 'import jax; print(getattr(jax, "__version__", ""))' 2>/dev/null || true)" && \
+    JAXLIB_VER="$(python -c 'import jaxlib; print(getattr(jaxlib, "__version__", ""))' 2>/dev/null || true)" && \
+    CONSTRAINTS_FILE="/tmp/alphafold2_runtime_constraints.txt" && \
+    {
+      echo "jax==${JAX_VER}";
+      echo "jaxlib==${JAXLIB_VER}";
+    } >"$CONSTRAINTS_FILE" && \
+    python -m pip install -q -c "$CONSTRAINTS_FILE" "tensorflow==2.17.0" && \
+    if python -m pip show -q tensorflow-cpu-aws >/dev/null 2>&1; then \
+      python -m pip uninstall -y -q tensorflow-cpu-aws >/dev/null 2>&1 || true; \
+      python -m pip install -q --upgrade --force-reinstall "tensorflow==2.17.0" || true; \
+    fi && \
+    python -c 'import tensorflow as tf; print("tensorflow ok", tf.__version__)'
+  ) >>"$OUT_LOG" 2>&1
+fi
+
+# Ensure pdbfixer is installed (some AlphaFold versions import relax modules even when relaxation is disabled).
+echo "[$(date -Is)] Ensuring pdbfixer is installed in conda env alphafold2..." | tee -a "$OUT_LOG"
+set +e
+(
+  eval "$(conda shell.bash hook)" && conda activate alphafold2 && \
+  python -c 'import pdbfixer; print("pdbfixer ok")'
+) >>"$OUT_LOG" 2>&1
+rc=$?
+set -e
+if [[ "$rc" != "0" ]]; then
+  (
+    eval "$(conda shell.bash hook)" && conda activate alphafold2 && \
+    mamba install -y -q -c conda-forge pdbfixer && \
+    python -c 'import pdbfixer; print("pdbfixer ok")'
+  ) >>"$OUT_LOG" 2>&1
+fi
+
+# Ensure required external binaries are available (AlphaFold shells out to these).
+echo "[$(date -Is)] Ensuring AlphaFold external binaries (jackhmmer/hhblits/hhsearch/kalign) are installed..." | tee -a "$OUT_LOG"
+set +e
+(
+  bash "$ROOT_DIR/scripts/ensure_alphafold_external_binaries.sh"
+) >>"$OUT_LOG" 2>&1
+set -e
+
 # Restart host-native services so they pick up current env/tools.
 echo "[$(date -Is)] Restarting host-native model services..." | tee -a "$OUT_LOG"
 set +e
@@ -301,9 +354,31 @@ fi
 echo "[$(date -Is)] job_id=$job_id" | tee -a "$OUT_LOG"
 
 # Poll job status.
-server_url="http://localhost:8011"
-if [[ -n "${MCP_SERVER_URL:-}" ]]; then
-  server_url="$MCP_SERVER_URL"
+server_url=""
+
+# Prefer whatever URL the submit script actually used (it may override MCP_SERVER_URL=8010).
+server_url_from_submit="$(echo "$resp" | sed -n 's/^Submitting demo job to: //p' | head -n 1 || true)"
+if [[ -n "$server_url_from_submit" ]]; then
+  server_url="$server_url_from_submit"
+else
+  # Fallback: parse the API status line if present.
+  server_url_from_status="$(echo "$resp" | sed -n 's|^API status: \(.*\)/api/jobs/.*$|\1|p' | head -n 1 || true)"
+  if [[ -n "$server_url_from_status" ]]; then
+    server_url="$server_url_from_status"
+  fi
+fi
+
+# Final fallback: mimic submit_demo_job.sh preference rules.
+if [[ -z "$server_url" ]]; then
+  if [[ -n "${MCP_SERVER_URL:-}" && "${MCP_SERVER_URL_FORCE:-0}" == "1" ]]; then
+    server_url="$MCP_SERVER_URL"
+  elif curl -fsS "http://localhost:8011/health" >/dev/null 2>&1; then
+    server_url="http://localhost:8011"
+  elif curl -fsS "http://localhost:8010/health" >/dev/null 2>&1; then
+    server_url="http://localhost:8010"
+  else
+    server_url="http://localhost:${MCP_SERVER_HOST_PORT:-8011}"
+  fi
 fi
 
 echo "[$(date -Is)] Polling job status at $server_url/api/jobs/$job_id" | tee -a "$OUT_LOG"

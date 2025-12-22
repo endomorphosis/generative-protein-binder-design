@@ -693,6 +693,33 @@ export ALPHAFOLD_CACHE_DIR=~/.cache/alphafold
 mkdir -p $ALPHAFOLD_CACHE_DIR
 ```
 
+#### Optional: Pre-warm AlphaFold DBs in RAM (Evictable)
+
+On Linux, large read-heavy databases benefit from the kernel page cache.
+You can pre-warm the key AlphaFold DB files so the first run after boot is faster.
+
+This does **not** lock/pin memory; the cache is automatically evicted under memory pressure.
+
+```bash
+bash scripts/warm_alphafold_page_cache.sh --data-dir ~/.cache/alphafold --min-mem-gb 6
+```
+
+If you want extra protection against transient memory spikes, enabling swap (or zram-backed swap) is a good mitigation.
+
+#### Continuous Memory Safety (Recommended for Non-Technical Users)
+
+When using the ARM64 host-native mode, `scripts/start_everything.sh` starts a small background watchdog that:
+
+- Monitors `MemAvailable` continuously.
+- Under memory pressure, evicts AlphaFold DB file pages from the Linux page cache (best-effort).
+- Does **not** lock memory and does **not** drop global caches.
+
+You can also run a read-only report to help users understand what they are seeing:
+
+```bash
+bash scripts/check_memory_safety.sh
+```
+
 ## Validation and Testing
 
 ### Verify All Components
