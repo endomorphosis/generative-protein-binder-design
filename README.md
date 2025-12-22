@@ -1,7 +1,5 @@
 # Protein Binder Design Blueprint (MCP + Dashboard)
 
-![A workflow diagram of the Protein Design Blueprint](docs/Protein_Design_Architecture_Diagram.png)
-
 This repository packages an end-to-end **protein binder design** workflow behind a simple control plane:
 
 - **MCP Server** (FastAPI) orchestrates jobs and stores results
