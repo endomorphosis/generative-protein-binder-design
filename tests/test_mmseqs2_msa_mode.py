@@ -10,6 +10,33 @@ from pathlib import Path
 import numpy as np
 
 
+class TestMMseqs2AlphafoldE2E(unittest.TestCase):
+    def test_e2e_alphafold_mmseqs2_optional(self):
+        # This is an opt-in e2e test because it requires real AlphaFold weights + DBs.
+        if os.environ.get("RUN_E2E_MMSEQS2") not in {"1", "true", "TRUE", "yes", "YES"}:
+            self.skipTest("Set RUN_E2E_MMSEQS2=1 to run the real e2e AlphaFold+MMseqs2 test")
+
+        repo_root = Path(__file__).resolve().parents[1]
+        script = repo_root / "scripts" / "e2e_test_alphafold_mmseqs2.sh"
+        if not script.exists():
+            self.fail(f"Missing e2e script: {script}")
+
+        import subprocess
+
+        # Run script as a subprocess so it can use conda run, large file IO, etc.
+        proc = subprocess.run(
+            ["bash", str(script)],
+            cwd=str(repo_root),
+            env=os.environ.copy(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if proc.returncode != 0:
+            # Print output to help debugging in CI/manual runs.
+            self.fail(f"E2E script failed (exit={proc.returncode})\n{proc.stdout}")
+
+
 class _DummyTemplateSearcher:
     # The mmseqs2 path requires A3M templates.
     input_format = "a3m"
