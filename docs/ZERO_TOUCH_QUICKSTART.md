@@ -141,6 +141,31 @@ Starts HTTP services wrapping native installations:
 - AlphaFold2: http://localhost:18081
 - RFDiffusion: http://localhost:18082
 
+### Optional: MMseqs2 fast MSA mode (keeps reduced DB)
+
+The installer provisions `mmseqs2` in the AlphaFold2 conda env and (for `--db-tier reduced`/`full`) builds an MMseqs2 searchable DB from the reduced FASTA set (defaults to UniRef90).
+
+If you want to (re)install MMseqs2 explicitly or rebuild the MMseqs2 DB prefix:
+
+```bash
+./scripts/install_mmseqs2.sh --conda-env alphafold2 --data-dir "$ALPHAFOLD_DATA_DIR" --db-tier reduced --build-db
+```
+
+To enable MMseqs2 for MSA generation, set these env vars before starting the native services:
+
+```bash
+export ALPHAFOLD_MSA_MODE=mmseqs2
+export ALPHAFOLD_MMSEQS2_DATABASE_PATH="$ALPHAFOLD_DATA_DIR/mmseqs2/uniref90_db"
+```
+
+You can also override the DB build inputs during install via:
+
+```bash
+export ALPHAFOLD_MMSEQS2_DB_FASTA_PATH=/path/to/sequences.fasta
+export ALPHAFOLD_MMSEQS2_DB_PREFIX=/path/to/out_prefix
+export ALPHAFOLD_MMSEQS2_DB_THREADS=32
+```
+
 ### 3. Start Dashboard
 
 ```bash
