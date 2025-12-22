@@ -15,20 +15,28 @@ This directory contains the implementation of a complete Docker-based infrastruc
 └────────┬────────┘
          │
          ▼
-┌─────────────────┐
-│   MCP Server    │ (Port 8000)
-│    (FastAPI)    │
-└────────┬────────┘
+┌──────────────────────────────┐
+│   MCP Server (FastAPI)       │
+│  Host: ${MCP_SERVER_HOST_PORT:-8011}
+│  Container: 8000             │
+└────────┬─────────────────────┘
          │
          ▼
-┌─────────────────────────────────────┐
-│  NIM Services (Protein Design)      │
-├─────────────────────────────────────┤
-│ • AlphaFold2         (Port 8081)    │
-│ • RFDiffusion        (Port 8082)    │
-│ • ProteinMPNN        (Port 8083)    │
-│ • AlphaFold2-Multimer (Port 8084)   │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│ Model backends (selected by stack / configuration)        │
+├──────────────────────────────────────────────────────────┤
+│ AMD64 NIM services (common defaults):                     │
+│ • AlphaFold2         (8081)                               │
+│ • RFDiffusion        (8082)                               │
+│ • ProteinMPNN        (8083)                               │
+│ • AlphaFold2-Multimer (8084)                              │
+│                                                          │
+│ ARM64 host-native wrappers (DGX Spark / aarch64):         │
+│ • AlphaFold2         (18081, includes /v1/metrics)        │
+│ • RFDiffusion        (18082)                              │
+│ • ProteinMPNN        (18083)                              │
+│ • AlphaFold2-Multimer (18084)                             │
+└──────────────────────────────────────────────────────────┘
 
 ┌─────────────────┐
 │ Jupyter Server  │ (Port 8888)
@@ -66,10 +74,11 @@ docker compose -f ../deploy/docker-compose-full.yaml up
 ### Accessing Services
 
 - **MCP Dashboard**: http://localhost:3000
-- **MCP Server API**: http://localhost:8000
-- **MCP Server Docs**: http://localhost:8000/docs
+- **MCP Server API (host)**: http://localhost:${MCP_SERVER_HOST_PORT:-8011}
+- **MCP Server Docs (host)**: http://localhost:${MCP_SERVER_HOST_PORT:-8011}/docs
 - **Jupyter Notebook**: http://localhost:8888
-- **NIM Services**: http://localhost:8081-8084
+- **NIM Services (AMD64 stack)**: http://localhost:8081-8084
+- **ARM64 native wrappers (DGX Spark)**: http://localhost:18081-18084
 
 ### Backend routing + fallback (NIM → external → embedded)
 
@@ -187,6 +196,12 @@ The MCP (Model Context Protocol) Server provides a REST API for managing protein
 - `GET /api/jobs/{job_id}` - Get job status
 - `DELETE /api/jobs/{job_id}` - Delete a job
 
+The job status endpoint supports optional, best-effort diagnostics:
+
+- `include_metrics=1`: stage timing and host-side metrics snapshots (when available)
+- `include_residency=1`: also include AlphaFold DB page-cache residency sampling (slower)
+- `include_error_detail=1`: include full error details (default responses contain a summarized/truncated error suitable for UIs)
+
 #### Health & Monitoring
 - `GET /health` - Server health check
 - `GET /api/services/status` - Check NIM services status
@@ -195,7 +210,7 @@ The MCP (Model Context Protocol) Server provides a REST API for managing protein
 
 Create a new job:
 ```bash
-curl -X POST http://localhost:8000/api/jobs \
+curl -X POST http://localhost:${MCP_SERVER_HOST_PORT:-8011}/api/jobs \
   -H "Content-Type: application/json" \
   -d '{
     "sequence": "MKFLKFSLLTAVLLSVVFAFSSCGDDDDTGYLPPSQAIQDLLKRMKV",
@@ -206,7 +221,7 @@ curl -X POST http://localhost:8000/api/jobs \
 
 Check job status:
 ```bash
-curl http://localhost:8000/api/jobs/{job_id}
+curl "http://localhost:${MCP_SERVER_HOST_PORT:-8011}/api/jobs/{job_id}?include_metrics=1"
 ```
 
 ## MCP Dashboard

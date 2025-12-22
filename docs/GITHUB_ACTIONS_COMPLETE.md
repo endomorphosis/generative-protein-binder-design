@@ -167,10 +167,10 @@ cd /home/barberb/actions-runner
 ## 🎯 Next Steps
 
 1. **✅ COMPLETED**: Runner setup and configuration
-2. **✅ COMPLETED**: Workflow deployment  
-3. **🔄 CURRENT**: Test workflows via GitHub web interface
-4. **📋 TODO**: Run protein design pipeline with real targets
-5. **📋 TODO**: Integrate with continuous deployment  
+2. **✅ COMPLETED**: Workflow deployment
+3. **✅ COMPLETED**: End-to-end workflow smoke testing (demo jobs)
+4. **Next validation**: Run the pipeline with your own real target sequences + expected outputs
+5. **Optional**: Add CD / scheduled runs if you want recurring jobs
 
 ## 📞 Support
 

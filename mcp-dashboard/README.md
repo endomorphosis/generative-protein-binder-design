@@ -28,7 +28,9 @@ The dashboard will be available at http://localhost:3000
 
 ## Environment Variables
 
-- `NEXT_PUBLIC_MCP_SERVER_URL` - MCP Server endpoint (default: http://localhost:8000)
+- `NEXT_PUBLIC_MCP_SERVER_URL` - MCP Server endpoint
+	- Local dev MCP server default: `http://localhost:8000`
+	- Full stack (via `./scripts/run_dashboard_stack.sh`) default: `http://localhost:${MCP_SERVER_HOST_PORT:-8011}`
 
 ## Technology Stack
 
