@@ -43,13 +43,15 @@ Usage: $0 [OPTIONS]
 
 Installation Profiles:
   --minimal             Minimal installation (5GB, CPU-only, ~15 min)
-                        AlphaFold2 models only, RFDiffusion, ProteinMPNN
+                        AlphaFold2 models only, RFDiffusion, ProteinMPNN, MMseqs2
   
   --recommended         Recommended installation (50GB, GPU, ~1 hour)
-                        AlphaFold2 reduced databases, all tools with GPU support
+                        AlphaFold2 reduced databases, all tools with GPU support,
+                        MMseqs2 optimized database build
   
   --full                Full production installation (2.3TB, GPU, ~6 hours)
-                        Complete AlphaFold2 databases, all tools
+                        Complete AlphaFold2 databases, all tools,
+                        MMseqs2 complete database
 
 Component Selection:
   --alphafold-only      Install only AlphaFold2
@@ -179,7 +181,7 @@ echo ""
 # Display installation plan
 log_header "Installation Plan:"
 echo "  Components:"
-[ "$INSTALL_ALPHAFOLD" = true ] && echo "    ✓ AlphaFold2 (database tier: $DB_TIER)"
+[ "$INSTALL_ALPHAFOLD" = true ] && echo "    ✓ AlphaFold2 (database tier: $DB_TIER) + MMseqs2"
 [ "$INSTALL_RFDIFFUSION" = true ] && echo "    ✓ RFDiffusion"
 [ "$INSTALL_PROTEINMPNN" = true ] && echo "    ✓ ProteinMPNN"
 [ "$INSTALL_MCP" = true ] && echo "    ✓ MCP Server configuration"
@@ -247,6 +249,26 @@ if [ "$INSTALL_ALPHAFOLD" = true ]; then
         log_error "AlphaFold2 installation failed"
         log_installation "AlphaFold2: FAILED"
         exit 1
+    fi
+    echo ""
+    
+    # Install MMseqs2 for optimized MSA generation
+    log_step "Installing MMseqs2 for optimized MSA..."
+    log_installation "MMseqs2: Starting"
+    
+    MMSEQS2_ARGS="--conda-env alphafold2 --data-dir $HOME/.cache/alphafold --db-tier $DB_TIER --build-db"
+    if bash "$SCRIPT_DIR/install_mmseqs2.sh" $MMSEQS2_ARGS; then
+        log_success "MMseqs2 installation and database build complete"
+        log_installation "MMseqs2: SUCCESS"
+        
+        # Capture MMseqs2 environment variables for MCP config
+        MMSEQS2_EXPORTS=$(bash "$SCRIPT_DIR/install_mmseqs2.sh" --conda-env alphafold2 --print-env 2>/dev/null || echo "")
+        if [ -n "$MMSEQS2_EXPORTS" ]; then
+            echo "$MMSEQS2_EXPORTS" >> "$INSTALLATION_LOG"
+        fi
+    else
+        log_warning "MMseqs2 installation failed (non-critical, continuing...)"
+        log_installation "MMseqs2: WARNING"
     fi
     echo ""
 fi
@@ -468,6 +490,13 @@ if [ "$INSTALL_ALPHAFOLD" = true ]; then
         echo "  Activate: source $PROJECT_ROOT/tools/generated/alphafold2/activate.sh"
     else
         echo "  Activate: source $PROJECT_ROOT/tools/alphafold2/activate.sh"
+    fi
+    
+    # Show MMseqs2 database info if AlphaFold2 installed
+    MMSEQS2_DB="${HOME}/.cache/alphafold/mmseqs2/uniref90_db"
+    if [ -f "${MMSEQS2_DB}.dbtype" ] || [ -d "$MMSEQS2_DB" ]; then
+        echo "  MMseqs2 Database: $MMSEQS2_DB"
+        echo "  MSA Mode: mmseqs2 (optimized) or jackhmmer"
     fi
     echo ""
 fi
