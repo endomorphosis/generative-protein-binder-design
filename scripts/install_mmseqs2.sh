@@ -35,6 +35,7 @@ FORCE=false
 DB_FASTA_PATH="${ALPHAFOLD_MMSEQS2_DB_FASTA_PATH:-}"
 DB_PREFIX="${ALPHAFOLD_MMSEQS2_DB_PREFIX:-}"
 DB_THREADS="${ALPHAFOLD_MMSEQS2_DB_THREADS:-}"
+DB_TMPDIR="${ALPHAFOLD_MMSEQS2_DB_TMPDIR:-}"
 
 show_help() {
   cat <<'EOF'
@@ -51,6 +52,7 @@ Options:
   --build-db              Build an MMseqs2 DB from reduced/full FASTA
   --db-fasta PATH         FASTA to build the DB from (default: auto-detect, prefer UniRef90)
   --db-prefix PREFIX      Output DB prefix (default: $DATA_DIR/mmseqs2/uniref90_db)
+  --tmp-dir PATH          Temp directory for createindex (default: $DATA_DIR/mmseqs2/tmp_mmseqs)
   --threads N             Threads for createindex (default: nproc capped at 32)
   --force                 Rebuild DB even if it already exists
   --print-env             Print shell exports for ALPHAFOLD_MMSEQS2_* (for eval)
@@ -89,6 +91,8 @@ while [[ $# -gt 0 ]]; do
       DB_FASTA_PATH="${2:?missing value}"; shift 2 ;;
     --db-prefix)
       DB_PREFIX="${2:?missing value}"; shift 2 ;;
+    --tmp-dir)
+      DB_TMPDIR="${2:?missing value}"; shift 2 ;;
     --threads)
       DB_THREADS="${2:?missing value}"; shift 2 ;;
     --force)
@@ -186,6 +190,11 @@ if [[ "$DO_BUILD_DB" == true ]]; then
       db_prefix="$DATA_DIR/mmseqs2/uniref90_db"
     fi
 
+    tmp_dir="$DB_TMPDIR"
+    if [[ -z "$tmp_dir" ]]; then
+      tmp_dir="$(dirname "$db_prefix")/tmp_mmseqs"
+    fi
+
     threads="$DB_THREADS"
     if [[ -z "$threads" ]]; then
       if command -v nproc >/dev/null 2>&1; then
@@ -196,6 +205,21 @@ if [[ "$DO_BUILD_DB" == true ]]; then
       if [[ "$threads" -gt 32 ]]; then
         threads=32
       fi
+    fi
+
+    # Check available disk space before building (rough heuristic: need ~2x FASTA size)
+    fasta_size_mb="$(du -m "$fasta_path" 2>/dev/null | awk '{print $1}' || echo 0)"
+    required_mb="$((fasta_size_mb * 2))"
+    tmp_parent="$(dirname "$tmp_dir")"
+    mkdir -p "$tmp_parent" 2>/dev/null || true
+    available_mb="$(df -BM "$tmp_parent" 2>/dev/null | awk 'NR==2 {print $4}' | sed 's/M//' || echo 999999)"
+    if [[ "$available_mb" -lt "$required_mb" ]]; then
+      log_error "Insufficient disk space for MMseqs2 DB build:"
+      log_error "  FASTA size: ${fasta_size_mb}MB"
+      log_error "  Estimated requirement: ${required_mb}MB"
+      log_error "  Available on $(df "$tmp_parent" | awk 'NR==2 {print $1}'): ${available_mb}MB"
+      log_error "Free up space or override with --tmp-dir pointing to a larger partition."
+      exit 1
     fi
 
     if [[ "$FORCE" == true ]]; then
@@ -210,10 +234,10 @@ if [[ "$DO_BUILD_DB" == true ]]; then
     if [[ -f "${db_prefix}.dbtype" || -f "${db_prefix}.index" || -f "${db_prefix}.0" ]]; then
       log_success "MMseqs2 DB already exists: $db_prefix"
     else
-      log_info "Building MMseqs2 DB (threads=$threads)"
+      log_info "Building MMseqs2 DB (threads=$threads, tmp=$tmp_dir)"
       log_info "  FASTA: $fasta_path"
       log_info "  OUT:   $db_prefix"
-      bash "$ROOT_DIR/scripts/build_mmseqs_db.sh" "$fasta_path" "$db_prefix" --threads "$threads"
+      bash "$ROOT_DIR/scripts/build_mmseqs_db.sh" "$fasta_path" "$db_prefix" --threads "$threads" --tmp-dir "$tmp_dir"
       log_success "MMseqs2 DB ready: $db_prefix"
     fi
 

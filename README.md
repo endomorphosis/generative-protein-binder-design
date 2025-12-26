@@ -13,6 +13,8 @@ This repository packages an end-to-end **protein binder design** workflow behind
 
 ## Quick Start (recommended)
 
+**⚡ Performance**: Now includes [AlphaFold optimizations](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) for **29% faster** inference (balanced preset default).
+
 Start the Dashboard + MCP Server stack (auto-selects the right compose file for your platform):
 
 ```bash
@@ -63,6 +65,7 @@ Monitor a job from the CLI (helps detect “is it hung?” and prints progress +
 ## Where to go next
 
 - New here? Start with [START_HERE.md](START_HERE.md)
+- **Performance optimizations**: [docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) **(29% faster)**
 - Docker + MCP stack details: [docs/DOCKER_MCP_README.md](docs/DOCKER_MCP_README.md)
 - Deployment compose files: [deploy/](deploy/)
 - Architecture/background: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)

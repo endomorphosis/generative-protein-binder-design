@@ -101,10 +101,16 @@ export async function mcpCallTool(name: string, arguments_: Record<string, any>)
   return withMcpClient((client) => client.callTool({ name, arguments: arguments_ }))
 }
 
-export function extractFirstTextContent(result: any): string {
-  const content = result?.content
-  if (!Array.isArray(content) || content.length === 0) return ''
-  const first = content[0]
-  if (first?.type === 'text' && typeof first.text === 'string') return first.text
-  return ''
+// AlphaFold optimization settings functions
+export async function getAlphaFoldSettings() {
+  return mcpCallTool('get_alphafold_settings', {})
 }
+
+export async function updateAlphaFoldSettings(settings: Record<string, any>) {
+  return mcpCallTool('update_alphafold_settings', settings)
+}
+
+export async function resetAlphaFoldSettings() {
+  return mcpCallTool('reset_alphafold_settings', {})
+}
+

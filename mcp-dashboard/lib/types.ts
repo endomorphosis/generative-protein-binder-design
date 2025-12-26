@@ -41,3 +41,11 @@ export interface ProteinSequenceInput {
   job_name?: string
   num_designs: number
 }
+export interface AlphaFoldSettings {
+  speed_preset?: 'fast' | 'balanced' | 'quality'
+  disable_templates?: boolean
+  num_recycles?: number
+  num_ensemble?: number
+  mmseqs2_max_seqs?: number
+  msa_mode?: 'jackhmmer' | 'mmseqs2'
+}
