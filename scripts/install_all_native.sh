@@ -353,18 +353,50 @@ EOF
     echo ""
 fi
 
+# Setup GPU optimization (auto-enable for recommended/full, optional for minimal)
+log_step "Setting up GPU optimizations..."
+log_installation "GPU Optimization: Starting"
+
+if bash "$SCRIPT_DIR/detect_gpu_and_generate_env.sh"; then
+    log_success "GPU configuration generated"
+    log_installation "GPU Optimization: SUCCESS"
+    
+    # Add GPU config to MCP environment
+    if [ -f "$PROJECT_ROOT/.env.gpu" ]; then
+        cat >> "$MCP_ENV_FILE" << EOF
+
+# GPU Optimization Configuration (auto-generated)
+EOF
+        grep "^[A-Z_]*=" "$PROJECT_ROOT/.env.gpu" | grep -v "^#" >> "$MCP_ENV_FILE" || true
+    fi
+else
+    log_warning "GPU optimization setup failed (non-critical, continuing...)"
+    log_installation "GPU Optimization: WARNING"
+fi
+echo ""
+
 # Create activation script
 log_step "Creating activation script..."
 
 ACTIVATE_SCRIPT="$PROJECT_ROOT/activate_native.sh"
 cat > "$ACTIVATE_SCRIPT" << 'EOF'
 #!/bin/bash
-# Activate Native Backend Environment
+# Activate Native Backend Environment with GPU Optimizations
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Activating Native Backend Environment..."
 echo ""
+
+# Load GPU optimizations if available
+if [ -f "$PROJECT_ROOT/.env.gpu" ]; then
+    echo "[GPU] Loading GPU optimizations..."
+    set -a
+    source "$PROJECT_ROOT/.env.gpu"
+    set +a
+    echo "✓ GPU config loaded: $GPU_TYPE (count: $GPU_COUNT)"
+    echo ""
+fi
 
 # Load MCP environment
 if [ -f "$PROJECT_ROOT/mcp-server/.env.native" ]; then

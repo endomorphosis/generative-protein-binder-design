@@ -43,12 +43,11 @@ class ServerGPUOptimizer:
     def _initialize_gpu(self):
         """Initialize GPU and perform diagnostics."""
         try:
-            # Import GPU optimizer
-            sys.path.insert(0, os.path.join(
-                os.path.dirname(__file__),
-                'tools/alphafold2'
-            ))
-            from alphafold.model import gpu_optimizer
+            # Import GPU optimizer - try multiple paths for zero-touch compatibility
+            gpu_optimizer = self._import_gpu_optimizer()
+            if gpu_optimizer is None:
+                logger.warning("GPU optimizer module not available")
+                return
             
             optimizer = gpu_optimizer.get_gpu_optimizer()
             self.gpu_available, self.diagnostics = optimizer.validate_gpu_availability()
@@ -62,11 +61,41 @@ class ServerGPUOptimizer:
             else:
                 logger.warning("GPU not available, using CPU")
                 
-        except ImportError as e:
-            logger.warning(f"Failed to import gpu_optimizer: {e}")
         except Exception as e:
             logger.error(f"GPU initialization error: {e}")
             raise GPUInitializationError(str(e))
+
+    def _import_gpu_optimizer(self):
+        """Try to import gpu_optimizer from multiple paths for zero-touch compatibility."""
+        import importlib.util
+        
+        # Path 1: From alphafold module (if installed in conda env)
+        try:
+            from alphafold.model import gpu_optimizer
+            return gpu_optimizer
+        except ImportError:
+            pass
+        
+        # Path 2: From project tools directory (relative)
+        mcp_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(mcp_dir)
+        gpu_opt_path = os.path.join(project_root, 'tools', 'alphafold2', 'gpu_optimizer.py')
+        
+        if os.path.exists(gpu_opt_path):
+            spec = importlib.util.spec_from_file_location("gpu_optimizer", gpu_opt_path)
+            if spec and spec.loader:
+                gpu_optimizer = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(gpu_optimizer)
+                return gpu_optimizer
+        
+        # Path 3: Added to sys.path during conda environment activation
+        try:
+            import gpu_optimizer
+            return gpu_optimizer
+        except ImportError:
+            pass
+        
+        return None
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get GPU diagnostics."""
