@@ -22,16 +22,39 @@ SCRIPT_DIR="$PROJECT_ROOT/scripts"
 
 MINIMAL_ONLY=false
 REDUCED_ONLY=false
+SKIP_MINIMAL=false
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --minimal-only) MINIMAL_ONLY=true; shift ;;
         --reduced-only) REDUCED_ONLY=true; shift ;;
+        --skip-minimal) SKIP_MINIMAL=true; shift ;;
         --dry-run) DRY_RUN=true; shift ;;
         *) shift ;;
     esac
 done
+
+is_tier_complete() {
+    local tier="$1"
+    local output_dir="$HOME/.cache/alphafold/mmseqs2_test_${tier}"
+    
+    # Check if directory exists
+    if [[ ! -d "$output_dir" ]]; then
+        return 1
+    fi
+    
+    # Check if any .dbtype files exist (indicates successful conversion)
+    local db_count=0
+    for db_file in "$output_dir"/*_db.dbtype; do
+        if [[ -f "$db_file" ]]; then
+            db_count=$((db_count + 1))
+        fi
+    done
+    
+    # Return success if at least one database was created
+    [[ $db_count -gt 0 ]]
+}
 
 test_tier() {
     local tier="$1"
@@ -156,10 +179,16 @@ main() {
         echo "Running tests for all database tiers..."
         echo ""
         
-        if test_tier "minimal"; then
-            RESULTS+=("minimal: ✓ PASSED")
+        # Check if minimal tier is already complete
+        if is_tier_complete "minimal"; then
+            log_info "Minimal tier already complete, skipping..."
+            RESULTS+=("minimal: ⏭️ SKIPPED (already complete)")
         else
-            RESULTS+=("minimal: ✗ FAILED")
+            if test_tier "minimal"; then
+                RESULTS+=("minimal: ✓ PASSED")
+            else
+                RESULTS+=("minimal: ✗ FAILED")
+            fi
         fi
         echo ""
         
