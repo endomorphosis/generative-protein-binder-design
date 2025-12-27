@@ -46,6 +46,27 @@ This confirms the MCP server + dashboard pipeline wiring is working:
 
 Then open the Dashboard and look for the new job.
 
+## 5) (Optional) Zero-Touch Native Installer
+
+If you want the native toolchain (AlphaFold, RFDiffusion, ProteinMPNN) plus MMseqs2 databases built automatically:
+
+```bash
+# Minimal DBs (fastest)
+bash scripts/install_all_native.sh --minimal
+
+# Recommended DBs (dev)
+bash scripts/install_all_native.sh --recommended
+
+# Full DBs (production)
+bash scripts/install_all_native.sh --full
+```
+
+What it does:
+- Installs tools into `~/miniforge3/envs/alphafold2`
+- Downloads AlphaFold DBs for the chosen tier
+- Builds MMseqs2 databases to `~/.cache/alphafold/mmseqs2` (GPU-accelerated when available)
+- Skips already-built tiers automatically
+
 ## 5) Choose backend + fallback order
 
 In the Dashboard header, click **Settings** to choose how model calls are routed:

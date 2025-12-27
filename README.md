@@ -36,6 +36,21 @@ Monitor a job from the CLI (helps detect “is it hung?” and prints progress +
 ./scripts/monitor_job.sh <job_id> --metrics
 ```
 
+## Zero-Touch Native Installer (AlphaFold + MMseqs2)
+
+Use the unified installer to provision AlphaFold (tiered DBs), MMseqs2, RFDiffusion, and ProteinMPNN with one command. MMseqs2 databases are automatically built to `~/.cache/alphafold/mmseqs2`.
+
+| Profile | Command | What it does |
+| --- | --- | --- |
+| Minimal (CPU-friendly) | `bash scripts/install_all_native.sh --minimal` | Installs tools + UniRef90 → MMseqs2 (fastest download/build) |
+| Recommended (dev) | `bash scripts/install_all_native.sh --recommended` | Installs tools + UniRef90 + small BFD → MMseqs2 |
+| Full (production) | `bash scripts/install_all_native.sh --full` | Installs tools + full AlphaFold DBs (UniRef90, BFD, PDB SeqRes, UniProt) → MMseqs2 |
+
+Notes:
+- GPU indexing is auto-detected; falls back to CPU if no GPU.
+- Existing MMseqs2 DBs are auto-detected and skipped; use `rm -rf ~/.cache/alphafold/mmseqs2` to force rebuild.
+- Integration details: [docs/MMSEQS2_INSTALLER_INTEGRATION.md](docs/MMSEQS2_INSTALLER_INTEGRATION.md).
+
 ## Ports & Services (defaults)
 
 - Dashboard: `3000`
