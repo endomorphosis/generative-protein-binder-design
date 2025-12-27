@@ -256,19 +256,34 @@ if [ "$INSTALL_ALPHAFOLD" = true ]; then
     log_step "Installing MMseqs2 for optimized MSA..."
     log_installation "MMseqs2: Starting"
     
-    MMSEQS2_ARGS="--conda-env alphafold2 --data-dir $HOME/.cache/alphafold --db-tier $DB_TIER --build-db"
-    if bash "$SCRIPT_DIR/install_mmseqs2.sh" $MMSEQS2_ARGS; then
-        log_success "MMseqs2 installation and database build complete"
-        log_installation "MMseqs2: SUCCESS"
+    # First ensure MMseqs2 is installed via conda
+    if bash "$SCRIPT_DIR/install_mmseqs2.sh" --conda-env alphafold2 --install-only; then
+        log_success "MMseqs2 binary installed"
         
-        # Capture MMseqs2 environment variables for MCP config
-        MMSEQS2_EXPORTS=$(bash "$SCRIPT_DIR/install_mmseqs2.sh" --conda-env alphafold2 --print-env 2>/dev/null || echo "")
-        if [ -n "$MMSEQS2_EXPORTS" ]; then
-            echo "$MMSEQS2_EXPORTS" >> "$INSTALLATION_LOG"
+        # Now build the multistage database with the correct output path
+        log_step "Building MMseqs2 database (tier: $DB_TIER)..."
+        MMSEQS2_OUTPUT="$HOME/.cache/alphafold/mmseqs2"
+        
+        if bash "$SCRIPT_DIR/convert_alphafold_db_to_mmseqs2_multistage.sh" \
+            --tier "$DB_TIER" \
+            --output-dir "$MMSEQS2_OUTPUT" \
+            --gpu; then
+            
+            log_success "MMseqs2 database build complete"
+            log_installation "MMseqs2: SUCCESS"
+            
+            # Verify databases were created
+            if [[ -f "$MMSEQS2_OUTPUT/uniref90_db.dbtype" ]]; then
+                log_success "MMseqs2 databases verified: $MMSEQS2_OUTPUT"
+                echo "MMSEQS2_DB_PATH=$MMSEQS2_OUTPUT" >> "$INSTALLATION_LOG"
+            fi
+        else
+            log_warning "MMseqs2 database build failed (non-critical, continuing...)"
+            log_installation "MMseqs2 DB Build: WARNING"
         fi
     else
-        log_warning "MMseqs2 installation failed (non-critical, continuing...)"
-        log_installation "MMseqs2: WARNING"
+        log_warning "MMseqs2 binary installation failed (non-critical, continuing...)"
+        log_installation "MMseqs2 Install: WARNING"
     fi
     echo ""
 fi
