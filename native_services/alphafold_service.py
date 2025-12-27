@@ -48,18 +48,33 @@ def _maybe_inject_runtime_flags(cmd: str) -> str:
 
     msa_n_cpu = max(1, msa_n_cpu)
 
-    # Only add if none are present.
-    if "--jackhmmer_n_cpu" not in cmd:
-        cmd += f" --jackhmmer_n_cpu={msa_n_cpu}"
-    if "--hmmsearch_n_cpu" not in cmd:
-        cmd += f" --hmmsearch_n_cpu={msa_n_cpu}"
-    if "--hhsearch_n_cpu" not in cmd:
-        cmd += f" --hhsearch_n_cpu={msa_n_cpu}"
-
     # Optional: switch MSA implementation.
     msa_mode = (env_str("ALPHAFOLD_MSA_MODE", "") or "").strip().lower()
     if msa_mode and "--msa_mode" not in cmd:
         cmd += f" --msa_mode={msa_mode}"
+
+    # Threading for MSA/template search tools.
+    # In mmseqs2 mode, jackhmmer/hmmsearch are not used for MSA generation,
+    # but HHsearch may still be used for template search.
+    effective_msa_mode = msa_mode
+    if not effective_msa_mode:
+        if "--msa_mode=mmseqs2" in cmd:
+            effective_msa_mode = "mmseqs2"
+
+    # Always set the shared MSA tools CPU flag used by the pipeline.
+    # AlphaFold's pipeline uses --jackhmmer_n_cpu value for all MSA tools,
+    # including MMseqs2 when msa_mode=mmseqs2. Ensure it's present.
+    if "--jackhmmer_n_cpu" not in cmd:
+        cmd += f" --jackhmmer_n_cpu={msa_n_cpu}"
+
+    if effective_msa_mode == "mmseqs2":
+        if "--hhsearch_n_cpu" not in cmd:
+            cmd += f" --hhsearch_n_cpu={msa_n_cpu}"
+    else:
+        if "--hmmsearch_n_cpu" not in cmd:
+            cmd += f" --hmmsearch_n_cpu={msa_n_cpu}"
+        if "--hhsearch_n_cpu" not in cmd:
+            cmd += f" --hhsearch_n_cpu={msa_n_cpu}"
 
     # Optional: MMseqs2 settings (only used when --msa_mode=mmseqs2).
     mmseqs_db = (env_str("ALPHAFOLD_MMSEQS2_DATABASE_PATH", "") or "").strip()
@@ -102,7 +117,10 @@ def _maybe_inject_runtime_flags(cmd: str) -> str:
 
     # Minimal logging to help debug performance without changing responses.
     try:
-        print(f"[alphafold_service] msa_n_cpu={msa_n_cpu} gpu_present={nvidia_gpu_present()}")
+        print(
+            f"[alphafold_service] msa_mode={effective_msa_mode or 'jackhmmer'} msa_n_cpu={msa_n_cpu} gpu_present={nvidia_gpu_present()}",
+            flush=True,
+        )
     except Exception:
         pass
 

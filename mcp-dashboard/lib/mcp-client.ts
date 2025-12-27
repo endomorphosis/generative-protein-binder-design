@@ -79,3 +79,11 @@ class MCPClient {
 
   async resetAlphaFoldSettings(): Promise<any> {
     return sendJson('/api/alphafold/settings/reset', 'POST')
+  }
+
+}
+
+
+const client = new MCPClient()
+export const mcpClient = client
+export default client

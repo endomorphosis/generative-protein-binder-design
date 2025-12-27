@@ -30,6 +30,7 @@ DO_INSTALL=true
 DO_BUILD_DB=false
 PRINT_ENV=false
 FORCE=false
+GPU_BUILD=false
 
 # Optional overrides for DB build
 DB_FASTA_PATH="${ALPHAFOLD_MMSEQS2_DB_FASTA_PATH:-}"
@@ -50,6 +51,7 @@ Options:
   --db-tier TIER          minimal|reduced|full|auto (default: auto)
   --install-only          Only install mmseqs2 into the conda env
   --build-db              Build an MMseqs2 DB from reduced/full FASTA
+  --gpu-build             Build MMseqs2 from source with GPU (CUDA) support and prefer that binary
   --db-fasta PATH         FASTA to build the DB from (default: auto-detect, prefer UniRef90)
   --db-prefix PREFIX      Output DB prefix (default: $DATA_DIR/mmseqs2/uniref90_db)
   --tmp-dir PATH          Temp directory for createindex (default: $DATA_DIR/mmseqs2/tmp_mmseqs)
@@ -85,6 +87,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --build-db)
       DO_BUILD_DB=true
+      shift
+      ;;
+    --gpu-build)
+      GPU_BUILD=true
       shift
       ;;
     --db-fasta)
@@ -245,9 +251,46 @@ if [[ "$DO_BUILD_DB" == true ]]; then
   fi
 fi
 
+# Optional: build GPU-enabled MMseqs2 from source and prefer it
+MMSEQS_GPU_BIN=""
+if [[ "$GPU_BUILD" == true ]]; then
+  if ! command -v nvcc >/dev/null 2>&1; then
+    log_warning "nvcc not found; cannot build GPU MMseqs2. Skipping GPU build."
+  else
+    SRC_DIR="$ROOT_DIR/tools/mmseqs2_src"
+    PREFIX_DIR="/opt/mmseqs2-gpu"
+    BIN_PATH="$PREFIX_DIR/bin/mmseqs"
+    if [[ -x "$BIN_PATH" ]]; then
+      log_info "GPU MMseqs2 already built: $BIN_PATH"
+      MMSEQS_GPU_BIN="$BIN_PATH"
+    else
+      log_step "Building MMseqs2 (GPU/CUDA) from source..."
+      mkdir -p "$SRC_DIR" || true
+      if [[ -d "$SRC_DIR/MMseqs2" ]]; then
+        (cd "$SRC_DIR/MMseqs2" && git pull --quiet) || true
+      else
+        git clone --quiet https://github.com/soedinglab/MMseqs2 "$SRC_DIR/MMseqs2"
+      fi
+      mkdir -p "$SRC_DIR/MMseqs2/build" && cd "$SRC_DIR/MMseqs2/build"
+      cmake -DCMAKE_BUILD_TYPE=Release -DHAVE_MPI=OFF -DENABLE_GPU=ON -DCMAKE_INSTALL_PREFIX="$PREFIX_DIR" ..
+      make -j"$(nproc)"
+      sudo make install || make install
+      if [[ -x "$BIN_PATH" ]]; then
+        log_success "GPU MMseqs2 built: $BIN_PATH"
+        MMSEQS_GPU_BIN="$BIN_PATH"
+      else
+        log_warning "GPU build completed but binary not found at $BIN_PATH"
+      fi
+    fi
+  fi
+fi
+
 mmseqs_path="$(command -v mmseqs 2>/dev/null || true)"
 if [[ "$PRINT_ENV" == true ]]; then
-  if [[ -n "$mmseqs_path" ]]; then
+  if [[ -n "$MMSEQS_GPU_BIN" ]]; then
+    printf 'export ALPHAFOLD_MMSEQS2_BINARY_PATH=%q\n' "$MMSEQS_GPU_BIN"
+    printf 'export ALPHAFOLD_MMSEQS2_USE_GPU=true\n'
+  elif [[ -n "$mmseqs_path" ]]; then
     printf 'export ALPHAFOLD_MMSEQS2_BINARY_PATH=%q\n' "$mmseqs_path"
   else
     printf 'export ALPHAFOLD_MMSEQS2_BINARY_PATH=%q\n' ""
@@ -256,7 +299,9 @@ if [[ "$PRINT_ENV" == true ]]; then
 fi
 
 if [[ "$PRINT_ENV" == false ]]; then
-  if [[ -n "$mmseqs_path" ]]; then
+  if [[ -n "$MMSEQS_GPU_BIN" ]]; then
+    log_success "MMseqs2 (GPU) ready: $MMSEQS_GPU_BIN"
+  elif [[ -n "$mmseqs_path" ]]; then
     log_success "MMseqs2 ready: $mmseqs_path"
   else
     log_warning "MMseqs2 not found on PATH (env '$CONDA_ENV')"

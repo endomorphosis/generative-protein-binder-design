@@ -11,7 +11,9 @@ This repository packages an end-to-end **protein binder design** workflow behind
 
 ## Quick Start (recommended)
 
-**⚡ Performance**: Now includes [AlphaFold optimizations](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) for **29% faster** inference (balanced preset default).
+**⚡ Performance Optimizations**:
+- [AlphaFold optimizations](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) for **29% faster** inference (balanced preset default)
+- **[Phase 2 GPU kernels](PHASE_2_README.md)** for **15-30x faster** MSA alignment (auto-installed on DGX Spark/CUDA 13.1+)
 
 Start the Dashboard + MCP Server stack (auto-selects the right compose file for your platform):
 
@@ -78,7 +80,29 @@ Notes:
 ## Where to go next
 
 - New here? Start with [START_HERE.md](START_HERE.md)
-- **Performance optimizations**: [docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) **(29% faster)**
+- **Performance optimizations**: 
+  - [AlphaFold optimizations](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) **(29% faster)**
+  - **[Phase 2 GPU kernels](PHASE_2_README.md) (15-30x faster MSA alignment)** ← NEW!
 - Docker + MCP stack details: [docs/DOCKER_MCP_README.md](docs/DOCKER_MCP_README.md)
 - Deployment compose files: [deploy/](deploy/)
 - Architecture/background: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+## GPU kernels (MMseqs2 prefilter)
+
+**Phase 1 (Current):**
+- CUDA k-mer extraction and diagonal scoring live in [tools/gpu_kernels/kmer_matching.cu](tools/gpu_kernels/kmer_matching.cu)
+- Benchmarks: `benchmark_kmer`, `benchmark_batched_diagonals`, `benchmark_end_to_end`, `benchmark_fp4_comparison`
+- **Experimental FP4 quantization** (Blackwell/GB10 tensor cores):
+  - Enable with `-DENABLE_NVFP4_EXPERIMENTAL=ON` (requires SM≥90)
+  - Currently uses simulated FP4 on CUDA 13.0 (1.02x speedup, 100% accuracy)
+  - Upgrade to CUDA 13.1+ for native tensor cores (2-4x expected speedup)
+  - See [docs/CUDA_UPGRADE_FP4_GUIDE.md](docs/CUDA_UPGRADE_FP4_GUIDE.md) for upgrade instructions
+  - Validate accuracy: `python3 tools/gpu_kernels/validate_fp4_accuracy.py`
+
+**Phase 2 (Infrastructure Complete):**
+- **15-30x speedup target** via device-side index, batch processing, and streaming
+- Auto-installed during `./scripts/install_all_native.sh` on CUDA 13.1+ systems
+- Documentation: [PHASE_2_README.md](PHASE_2_README.md), [PHASE_2_ZERO_TOUCH_INSTALL.md](PHASE_2_ZERO_TOUCH_INSTALL.md)
+- Tests: `bash tests/test_phase2_integration.sh` (37 tests, 100% pass rate)
+- Status: ✅ Infrastructure ready, ⏳ kernel integration Week 1 (Jan 2-9, 2025)
+

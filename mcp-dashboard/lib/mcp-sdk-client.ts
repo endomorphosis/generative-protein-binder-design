@@ -114,3 +114,29 @@ export async function resetAlphaFoldSettings() {
   return mcpCallTool('reset_alphafold_settings', {})
 }
 
+export function extractFirstTextContent(result: any): string {
+  if (!result) return ''
+
+  // MCP SDK tool results commonly look like: { content: [{ type: 'text', text: '...' }, ...] }
+  const content = (result as any).content
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      if (!item) continue
+      const text = (item as any).text
+      if (typeof text === 'string' && text.trim()) {
+        return text
+      }
+    }
+  }
+
+  // Some endpoints may return plain objects with common fields.
+  const msg = (result as any).message
+  if (typeof msg === 'string') return msg
+
+  try {
+    return JSON.stringify(result)
+  } catch {
+    return String(result)
+  }
+}
+

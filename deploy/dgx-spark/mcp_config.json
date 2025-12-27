@@ -3,8 +3,8 @@
   "allow_runtime_updates": true,
   "routing": {
     "mode": "fallback",
-    "primary": "external",
-    "order": ["external", "nim", "embedded"]
+    "primary": "embedded",
+    "order": ["embedded", "external", "nim"]
   },
   "nim": {
     "enabled": true,
@@ -18,10 +18,10 @@
   "external": {
     "enabled": true,
     "service_urls": {
-      "alphafold": null,
-      "rfdiffusion": null,
+      "alphafold": "http://host.docker.internal:18081",
+      "rfdiffusion": "http://host.docker.internal:18082",
       "proteinmpnn": null,
-      "alphafold_multimer": null
+      "alphafold_multimer": "http://host.docker.internal:18084"
     }
   },
   "embedded": {

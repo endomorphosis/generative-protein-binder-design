@@ -11,6 +11,7 @@ set -euo pipefail
 # Usage:
 #   ./scripts/start_everything.sh
 #   ./scripts/start_everything.sh --arm64-host-native
+#   ./scripts/start_everything.sh --host-native
 #   ./scripts/start_everything.sh --amd64
 #   ./scripts/start_everything.sh --arm64
 #   ./scripts/start_everything.sh --control-plane
@@ -24,12 +25,13 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/start_everything.sh [--amd64|--arm64|--arm64-host-native|--emulated|--control-plane]
+  scripts/start_everything.sh [--amd64|--arm64|--arm64-host-native|--host-native|--emulated|--control-plane]
                              [--no-build] [--provision] [--db-tier minimal|reduced|full] [-- <compose-args...>]
 
 Examples:
   ./scripts/start_everything.sh
   ./scripts/start_everything.sh --arm64-host-native --provision --db-tier minimal
+  ./scripts/start_everything.sh --host-native
   ./scripts/start_everything.sh --amd64 -- --pull always
 EOF
 }
@@ -46,7 +48,7 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
-    --amd64|--arm64|--arm64-host-native|--emulated|--control-plane)
+    --amd64|--arm64|--arm64-host-native|--host-native|--emulated|--control-plane)
       MODE="${1#--}"
       shift
       ;;
@@ -96,6 +98,13 @@ if [[ "$MODE" == "auto" ]]; then
     MODE="arm64-host-native"
     if [[ "$PROVISION" == "0" ]]; then
       PROVISION=1
+    fi
+  else
+    # On x86_64, prefer host-native wrappers when they have been provisioned.
+    if [[ -f "$ROOT_DIR/tools/generated/alphafold2/.env" || -f "$ROOT_DIR/tools/alphafold2/.env" ]]; then
+      if [[ -f "$ROOT_DIR/tools/generated/rfdiffusion/.env" || -f "$ROOT_DIR/tools/rfdiffusion/.env" || -f "$ROOT_DIR/tools/rfdiffusion/RFdiffusion/.env" ]]; then
+        MODE="host-native"
+      fi
     fi
   fi
 fi
@@ -189,7 +198,7 @@ EOF
 }
 
 # If the selected mode is ARM64 host-native, ensure host-native services are running.
-if [[ "$MODE" == "arm64-host-native" ]]; then
+if [[ "$MODE" == "arm64-host-native" || "$MODE" == "host-native" ]]; then
   start_host_native_services_if_needed
 fi
 

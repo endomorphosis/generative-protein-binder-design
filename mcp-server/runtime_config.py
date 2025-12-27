@@ -71,6 +71,14 @@ _NIM_ENV_KEYS: Dict[ServiceName, str] = {
 }
 
 
+_EXTERNAL_ENV_KEYS: Dict[ServiceName, str] = {
+    "alphafold": "EXTERNAL_ALPHAFOLD_URL",
+    "rfdiffusion": "EXTERNAL_RFDIFFUSION_URL",
+    "proteinmpnn": "EXTERNAL_PROTEINMPNN_URL",
+    "alphafold_multimer": "EXTERNAL_ALPHAFOLD_MULTIMER_URL",
+}
+
+
 def _apply_nim_env_overrides(cfg: "MCPServerConfig") -> bool:
     """Apply NIM service URL overrides from env.
 
@@ -89,6 +97,37 @@ def _apply_nim_env_overrides(cfg: "MCPServerConfig") -> bool:
             changed = True
     if changed:
         cfg.nim.service_urls = service_urls
+    return changed
+
+
+def _apply_external_env_overrides(cfg: "MCPServerConfig") -> bool:
+    """Apply External service URL overrides from env.
+
+    Precedence rule: if an env var like EXTERNAL_ALPHAFOLD_URL is present, it
+    overrides any persisted config value (including disabling the service).
+
+    This is critical for zero-touch docker-compose setups where operators want
+    to route to host-native wrappers without requiring dashboard clicks.
+    """
+
+    changed = False
+    service_urls = dict(cfg.external.service_urls or {})
+    saw_enabled_url = False
+    for service_name, env_key in _EXTERNAL_ENV_KEYS.items():
+        if env_key not in os.environ:
+            continue
+        new_value = _resolve_env_url(env_key)
+        if new_value:
+            saw_enabled_url = True
+        if service_urls.get(service_name) != new_value:
+            service_urls[service_name] = new_value
+            changed = True
+    if changed:
+        cfg.external.service_urls = service_urls
+    # If the operator provided any external URL, force-enable external provider.
+    if saw_enabled_url and not cfg.external.enabled:
+        cfg.external.enabled = True
+        changed = True
     return changed
 
 
@@ -306,7 +345,8 @@ class RoutingConfig(BaseModel):
     primary: ProviderName = "nim"
 
     # Used when mode == "fallback"; order to try.
-    order: List[ProviderName] = Field(default_factory=lambda: ["nim", "external", "embedded"])
+    # Prefer local inference first (embedded or locally hosted wrappers), then fall back to NIM.
+    order: List[ProviderName] = Field(default_factory=lambda: ["embedded", "external", "nim"])
 
 
 class MCPServerConfig(BaseModel):
@@ -331,6 +371,8 @@ class RuntimeConfigManager:
         if _apply_routing_env_overrides(self._config):
             self._revision += 1
         if _apply_embedded_env_overrides(self._config):
+            self._revision += 1
+        if _apply_external_env_overrides(self._config):
             self._revision += 1
         self._load_from_disk_if_present()
 
@@ -368,6 +410,9 @@ class RuntimeConfigManager:
 
             # Apply env overrides after loading persisted config.
             if _apply_nim_env_overrides(self._config):
+                self._revision += 1
+
+            if _apply_external_env_overrides(self._config):
                 self._revision += 1
 
             if _apply_embedded_env_overrides(self._config):

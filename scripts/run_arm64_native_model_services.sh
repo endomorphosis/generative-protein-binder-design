@@ -75,6 +75,8 @@ if [[ -z "${ALPHAFOLD_NATIVE_CMD:-}" ]]; then
   # Backward compatibility: older installers wrote the .env under alphafold2/.
   maybe_source_env_file "$ROOT_DIR/tools/alphafold2/.env"
 fi
+# MMseqs2 env (DB path and binary) from conversion/installer outputs
+maybe_source_env_file "$HOME/.cache/alphafold/.env.mmseqs2"
 if [[ -z "${RFDIFFUSION_NATIVE_CMD:-}" ]]; then
   maybe_source_env_file "$ROOT_DIR/tools/generated/rfdiffusion/.env"
   # Backward compatibility: older installers wrote the .env under tools/rfdiffusion/.
@@ -88,6 +90,17 @@ if [[ -z "${ALPHAFOLD_NATIVE_CMD:-}" ]]; then
   echo "Hint: run ./scripts/install_alphafold2_complete.sh (it writes tools/generated/alphafold2/.env)" >&2
   exit 2
 fi
+
+# Enable MMseqs2 with GPU-padded uniref90 DB; GPU binary present. Wrapper adds GPU flags.
+export ALPHAFOLD_MSA_MODE=${ALPHAFOLD_MSA_MODE:-mmseqs2}
+if [[ -z "${ALPHAFOLD_MMSEQS2_DATABASE_PATH:-}" ]]; then
+  export ALPHAFOLD_MMSEQS2_DATABASE_PATH="$HOME/.cache/alphafold/mmseqs2/uniref90_db"
+fi
+if [[ -z "${ALPHAFOLD_MMSEQS2_BINARY_PATH:-}" ]] && command -v mmseqs >/dev/null 2>&1; then
+  export ALPHAFOLD_MMSEQS2_BINARY_PATH="$(command -v mmseqs)"
+fi
+# Hint services to use GPU mmseqs2 when available
+export ALPHAFOLD_MMSEQS2_USE_GPU=${ALPHAFOLD_MMSEQS2_USE_GPU:-true}
 
 # Best-effort: if the user didn't configure a separate multimer command, derive
 # one from the monomer command (the installer writes --model_preset=monomer).

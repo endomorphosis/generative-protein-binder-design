@@ -26,7 +26,8 @@ def _truthy_env(name: str) -> bool:
 
 def allow_mock_outputs() -> bool:
     # Keep CI green/deterministic, but avoid silently faking model outputs in real deployments.
-        return _truthy_env("CI")
+    # Enable for CI, or when explicitly requested for testing
+    return _truthy_env("CI") or _truthy_env("ALLOW_MOCK_OUTPUTS") or _truthy_env("ENABLE_MOCK_MODE")
 
 class ModelBackend(ABC):
     """Abstract base class for model backends"""
@@ -276,6 +277,8 @@ class ExternalBackend(NIMBackend):
     """
 
     def __init__(self, service_urls: Dict[str, Optional[str]]):
+        # Reuse the NIMBackend HTTP client timeout defaults and error helpers.
+        super().__init__()
         self.service_urls = dict(service_urls)
         self.services = {k: v for k, v in self.service_urls.items() if v}
         logger.info("Initialized External REST Backend")
