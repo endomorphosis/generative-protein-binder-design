@@ -1,0 +1,166 @@
+# Docker Compose with GPU Optimization
+# Usage: docker-compose --env-file .env.gpu.docker up
+
+name: protein-binder-design-gpu-optimized
+
+services:
+  ## MCP Server with GPU Optimization
+  mcp-server:
+    build:
+      context: ..
+      dockerfile: mcp-server/Dockerfile
+    image: protein-design:mcp-gpu
+    container_name: mcp-server-gpu
+    ports:
+      - "${MCP_SERVER_HOST_PORT:-8011}:8000"
+    environment:
+      - MODEL_BACKEND=native
+      - ENABLE_GPU_OPTIMIZATION=${ENABLE_GPU_OPTIMIZATION:-true}
+      - JAX_PLATFORMS=${JAX_PLATFORMS:-gpu}
+      - TF_XLA_CACHE_DIR=${TF_XLA_CACHE_DIR:-/root/.cache/jax/xla_cache}
+      - XLA_PYTHON_CLIENT_MEM_FRACTION=${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.85}
+      - XLA_FLAGS=${XLA_FLAGS:---xla_gpu_fuse_operations=true}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
+      - TF_NUM_INTRAOP_THREADS=${TF_NUM_INTRAOP_THREADS:-4}
+      - TF_NUM_INTEROP_THREADS=${TF_NUM_INTEROP_THREADS:-2}
+      - ENABLE_JIT_WARMUP=${ENABLE_JIT_WARMUP:-true}
+      - ENABLE_OPERATION_FUSION=${ENABLE_OPERATION_FUSION:-true}
+      - PROFILE_INFERENCE=${PROFILE_INFERENCE:-false}
+    volumes:
+      # XLA compilation cache
+      - ${XLA_CACHE_VOLUME:-mcp-xla-cache}:${TF_XLA_CACHE_DIR:-/root/.cache/jax/xla_cache}
+      # Model cache
+      - ${MODEL_CACHE_VOLUME:-mcp-model-cache}:/root/.cache/alphafold
+      # Runtime cache
+      - ${RUNTIME_CACHE_VOLUME:-mcp-runtime-cache}:/tmp
+    # GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all  # Use all available GPUs
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  ## AlphaFold2 Native Service (with GPU)
+  alphafold-native:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.alphafold2-arm64
+      # Can be replaced with x86_64 Dockerfile as needed
+    image: alphafold2:gpu-native
+    container_name: alphafold-native-gpu
+    environment:
+      # GPU Optimization
+      - ENABLE_GPU_OPTIMIZATION=${ENABLE_GPU_OPTIMIZATION:-true}
+      - JAX_PLATFORMS=${JAX_PLATFORMS:-gpu}
+      - TF_XLA_CACHE_DIR=${TF_XLA_CACHE_DIR:-/root/.cache/jax/xla_cache}
+      - XLA_PYTHON_CLIENT_MEM_FRACTION=${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.85}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
+      # Model paths
+      - ALPHAFOLD_DATA_DIR=/data
+      - ALPHAFOLD_OUTPUTS=/outputs
+    ports:
+      - "8001:8080"
+    volumes:
+      # XLA cache
+      - ${XLA_CACHE_VOLUME:-mcp-xla-cache}:/root/.cache/jax/xla_cache
+      # Models
+      - ${ALPHAFOLD_DATA_VOLUME:-alphafold-data}:/data
+      # Outputs
+      - ${ALPHAFOLD_OUTPUT_VOLUME:-alphafold-outputs}:/outputs
+    # GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']  # Use GPU 0
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  ## RFDiffusion Native Service (with GPU)
+  rfdiffusion-native:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.rfdiffusion-arm64
+    image: rfdiffusion:gpu-native
+    container_name: rfdiffusion-native-gpu
+    environment:
+      # GPU Optimization
+      - ENABLE_GPU_OPTIMIZATION=${ENABLE_GPU_OPTIMIZATION:-true}
+      - JAX_PLATFORMS=${JAX_PLATFORMS:-gpu}
+      - TF_XLA_CACHE_DIR=${TF_XLA_CACHE_DIR:-/root/.cache/jax/xla_cache}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
+      # Model paths
+      - RFDIFFUSION_DATA_DIR=/data
+      - RFDIFFUSION_OUTPUTS=/outputs
+    ports:
+      - "8002:8080"
+    volumes:
+      # XLA cache
+      - ${XLA_CACHE_VOLUME:-mcp-xla-cache}:/root/.cache/jax/xla_cache
+      # Models
+      - ${RFDIFFUSION_DATA_VOLUME:-rfdiffusion-data}:/data
+      # Outputs
+      - ${RFDIFFUSION_OUTPUT_VOLUME:-rfdiffusion-outputs}:/outputs
+    # GPU support (can use GPU 1 if available)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['1']
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  ## GPU Monitor (Optional)
+  gpu-monitor:
+    image: nvidia/cuda:12.0-runtime-ubuntu22.04
+    container_name: gpu-monitor
+    command: nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu,utilization.memory --format=csv,noheader -l 1
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+    restart: unless-stopped
+    # Run in background, output logged
+
+volumes:
+  # XLA Compilation Cache (shared)
+  mcp-xla-cache:
+    driver: local
+  
+  # Model Cache
+  mcp-model-cache:
+    driver: local
+  alphafold-data:
+    driver: local
+  rfdiffusion-data:
+    driver: local
+  
+  # Runtime Cache
+  mcp-runtime-cache:
+    driver: local
+  
+  # Outputs
+  alphafold-outputs:
+    driver: local
+  rfdiffusion-outputs:
+    driver: local
+
+networks:
+  default:
+    name: protein-design-gpu
+    driver: bridge

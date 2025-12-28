@@ -263,6 +263,10 @@ def run_cmd(cmd: str, *, timeout_seconds: int) -> subprocess.CompletedProcess[st
     child_env.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
     child_env.setdefault("XLA_PYTHON_CLIENT_ALLOCATOR", "platform")
 
+    # Hint MMseqs2 to use GPU when requested and available (no-op if binary lacks GPU).
+    if _truthy_env("ALPHAFOLD_MMSEQS2_USE_GPU"):
+        child_env.setdefault("MMSEQS_FORCEGPU", "1")
+
     # Optional safety rails:
     # - single-flight lock to prevent multiple concurrent heavy runs
     # - RAM preflight to avoid starting under low-memory conditions

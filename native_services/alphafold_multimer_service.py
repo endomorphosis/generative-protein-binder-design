@@ -48,6 +48,20 @@ def _maybe_inject_runtime_flags(cmd: str) -> str:
     if "--hhsearch_n_cpu" not in cmd:
         cmd += f" --hhsearch_n_cpu={msa_n_cpu}"
 
+    msa_mode = (env_str("ALPHAFOLD_MSA_MODE", "") or "").strip().lower()
+    if msa_mode and "--msa_mode" not in cmd:
+        cmd += f" --msa_mode={msa_mode}"
+
+    mmseqs_db = (env_str("ALPHAFOLD_MMSEQS2_DATABASE_PATH", "") or "").strip()
+    if mmseqs_db and "--mmseqs2_database_path" not in cmd:
+        cmd += f" --mmseqs2_database_path={mmseqs_db}"
+    mmseqs_bin = (env_str("ALPHAFOLD_MMSEQS2_BINARY_PATH", "") or "").strip()
+    if mmseqs_bin and "--mmseqs2_binary_path" not in cmd:
+        cmd += f" --mmseqs2_binary_path={mmseqs_bin}"
+    mmseqs_max = (env_str("ALPHAFOLD_MMSEQS2_MAX_SEQS", "") or "").strip()
+    if mmseqs_max and "--mmseqs2_max_seqs" not in cmd:
+        cmd += f" --mmseqs2_max_seqs={mmseqs_max}"
+
     use_gpu_relax = (env_str("ALPHAFOLD_USE_GPU_RELAX", "auto") or "auto").strip().lower()
     if use_gpu_relax in {"1", "true", "yes", "y", "on", "auto"}:
         if use_gpu_relax != "auto" or nvidia_gpu_present():

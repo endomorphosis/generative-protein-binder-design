@@ -20,12 +20,13 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/run_dashboard_stack.sh [--amd64|--arm64|--arm64-host-native|--emulated|--control-plane] <docker compose args...>
+  scripts/run_dashboard_stack.sh [--amd64|--arm64|--arm64-host-native|--host-native|--emulated|--control-plane] <docker compose args...>
 
 Modes:
   --amd64     Force the AMD64 NIM stack (deploy/docker-compose-dashboard.yaml)
   --arm64     Force the ARM64-native stack (deploy/docker-compose-dashboard-arm64-native.yaml)
   --arm64-host-native  ARM64 host-native AlphaFold2/RFdiffusion (deploy/docker-compose-dashboard-arm64-host-native.yaml)
+  --host-native  Host-native wrappers (no NIM) (deploy/docker-compose-dashboard-host-native.yaml)
   --emulated  Same as --amd64, but prints extra guidance for ARM64 hosts
   --control-plane  MCP server + dashboard only (deploy/docker-compose-dashboard-default.yaml)
 
@@ -60,6 +61,10 @@ while [[ $# -gt 0 ]]; do
       MODE="arm64-host-native"
       shift
       ;;
+    --host-native)
+      MODE="host-native"
+      shift
+      ;;
     --emulated)
       MODE="emulated"
       shift
@@ -83,11 +88,36 @@ ARCH="$(uname -m)"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 COMPOSE_FILE=""
+
+is_host_native_wrappers_healthy() {
+  # Best-effort probe: if the user has started the host-native wrappers on the host,
+  # we should prefer them over NIM.
+  local af_port="${ALPHAFOLD_NATIVE_PORT:-18081}"
+  local rf_port="${RFDIFFUSION_NATIVE_PORT:-18082}"
+  local afm_port="${ALPHAFOLD_MULTIMER_NATIVE_PORT:-18084}"
+
+  curl -fsS "http://localhost:${af_port}/v1/health/ready" >/dev/null 2>&1 \
+    && curl -fsS "http://localhost:${rf_port}/v1/health/ready" >/dev/null 2>&1 \
+    && curl -fsS "http://localhost:${afm_port}/v1/health/ready" >/dev/null 2>&1
+}
+
+has_ngc_key() {
+  [[ -n "${NGC_CLI_API_KEY:-}" ]]
+}
+
 case "$MODE" in
   auto)
     case "$ARCH" in
       x86_64|amd64)
-        COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard.yaml"
+        # Prefer local inference when available; only fall back to NIM when the user
+        # provided an NGC key. Otherwise run the control-plane stack.
+        if is_host_native_wrappers_healthy; then
+          COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-host-native.yaml"
+        elif has_ngc_key; then
+          COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard.yaml"
+        else
+          COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-default.yaml"
+        fi
         ;;
       aarch64|arm64)
         # Prefer the host-native stack on ARM64. The ARM64-native compose file is
@@ -110,6 +140,9 @@ case "$MODE" in
     ;;
   arm64-host-native)
     COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-arm64-host-native.yaml"
+    ;;
+  host-native)
+    COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-host-native.yaml"
     ;;
   control-plane)
     COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-default.yaml"

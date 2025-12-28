@@ -8,6 +8,7 @@ import ServiceStatus from '@/components/ServiceStatus'
 import JupyterLauncher from '@/components/JupyterLauncher'
 import ToolsPanel from '@/components/ToolsPanel'
 import BackendSettings from '@/components/BackendSettings'
+import AlphaFoldSettings from '@/components/AlphaFoldSettings'
 import { Job } from '@/lib/types'
 
 export default function Home() {
@@ -73,6 +74,11 @@ export default function Home() {
         {/* Service Status */}
         <div className="mb-8">
           <ServiceStatus />
+        </div>
+
+        {/* AlphaFold Optimization Settings */}
+        <div className="mb-8">
+          <AlphaFoldSettings onSettingsChanged={handleJobCreated} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

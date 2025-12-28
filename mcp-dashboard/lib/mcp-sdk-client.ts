@@ -101,10 +101,42 @@ export async function mcpCallTool(name: string, arguments_: Record<string, any>)
   return withMcpClient((client) => client.callTool({ name, arguments: arguments_ }))
 }
 
-export function extractFirstTextContent(result: any): string {
-  const content = result?.content
-  if (!Array.isArray(content) || content.length === 0) return ''
-  const first = content[0]
-  if (first?.type === 'text' && typeof first.text === 'string') return first.text
-  return ''
+// AlphaFold optimization settings functions
+export async function getAlphaFoldSettings() {
+  return mcpCallTool('get_alphafold_settings', {})
 }
+
+export async function updateAlphaFoldSettings(settings: Record<string, any>) {
+  return mcpCallTool('update_alphafold_settings', settings)
+}
+
+export async function resetAlphaFoldSettings() {
+  return mcpCallTool('reset_alphafold_settings', {})
+}
+
+export function extractFirstTextContent(result: any): string {
+  if (!result) return ''
+
+  // MCP SDK tool results commonly look like: { content: [{ type: 'text', text: '...' }, ...] }
+  const content = (result as any).content
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      if (!item) continue
+      const text = (item as any).text
+      if (typeof text === 'string' && text.trim()) {
+        return text
+      }
+    }
+  }
+
+  // Some endpoints may return plain objects with common fields.
+  const msg = (result as any).message
+  if (typeof msg === 'string') return msg
+
+  try {
+    return JSON.stringify(result)
+  } catch {
+    return String(result)
+  }
+}
+

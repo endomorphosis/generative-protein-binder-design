@@ -23,6 +23,16 @@ async function sendJson<T>(path: string, method: 'POST' | 'DELETE', body?: any):
   return (await res.json()) as T
 }
 
+// AlphaFold settings interface
+export interface AlphaFoldSettings {
+  speed_preset?: string
+  disable_templates?: boolean
+  num_recycles?: number
+  num_ensemble?: number
+  mmseqs2_max_seqs?: number
+  msa_mode?: string
+}
+
 class MCPClient {
   // MCP Protocol methods
   async listTools() {
@@ -58,10 +68,22 @@ class MCPClient {
     return getJson<ServiceStatus>('/api/mcp/services/status')
   }
 
-  async healthCheck(): Promise<{ status: string }> {
-    // Dashboard health is separate; this keeps existing API usage from breaking.
-    return { status: 'ok' }
+  // AlphaFold settings methods
+  async getAlphaFoldSettings(): Promise<AlphaFoldSettings> {
+    return getJson<AlphaFoldSettings>('/api/alphafold/settings')
   }
+
+  async updateAlphaFoldSettings(settings: AlphaFoldSettings): Promise<any> {
+    return sendJson('/api/alphafold/settings', 'POST', settings)
+  }
+
+  async resetAlphaFoldSettings(): Promise<any> {
+    return sendJson('/api/alphafold/settings/reset', 'POST')
+  }
+
 }
 
-export const mcpClient = new MCPClient()
+
+const client = new MCPClient()
+export const mcpClient = client
+export default client

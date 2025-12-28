@@ -11,6 +11,8 @@ This repository packages an end-to-end **protein binder design** workflow behind
 
 ## Quick Start (recommended)
 
+**⚡ Performance**: Now includes [AlphaFold optimizations](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) for **29% faster** inference (balanced preset default).
+
 Start the Dashboard + MCP Server stack (auto-selects the right compose file for your platform):
 
 ```bash
@@ -28,11 +30,32 @@ Submit a demo job:
 ./scripts/submit_demo_job.sh
 ```
 
-Monitor a job from the CLI (helps detect “is it hung?” and prints progress + cache/mem metrics):
+Monitor a job from the CLI (helps detect "is it hung?" and prints progress + cache/mem metrics):
 
 ```bash
 ./scripts/monitor_job.sh <job_id> --metrics
 ```
+
+## Zero-Touch Native Installer (AlphaFold + MMseqs2 + GPU Acceleration)
+
+Use the unified installer to provision AlphaFold (tiered DBs), MMseqs2, RFDiffusion, and ProteinMPNN with one command. MMseqs2 databases are automatically built to `~/.cache/alphafold/mmseqs2`.
+
+**🚀 NEW**: Automatically detects and configures GPU acceleration for 5-10x faster MSA generation!
+
+| Profile | Command | What it does |
+| --- | --- | --- |
+| Minimal (CPU-friendly) | `bash scripts/install_all_native.sh --minimal` | Installs tools + UniRef90 → MMseqs2 (fastest download/build) |
+| Recommended (dev) | `bash scripts/install_all_native.sh --recommended` | Installs tools + UniRef90 + small BFD → MMseqs2 + **GPU auto-config** |
+| Full (production) | `bash scripts/install_all_native.sh --full` | Installs tools + full AlphaFold DBs (UniRef90, BFD, PDB SeqRes, UniProt) → MMseqs2 + **GPU auto-config** |
+
+Notes:
+- GPU detection and configuration is automatic - no manual setup needed
+- If GPU detected: Creates GPU server scripts for 5-10x MSA speedup
+- GPU indexing is auto-detected; falls back to CPU if no GPU.
+- MMseqs2 databases are created in GPU-server mode (works with existing databases)
+- For details: See [MMseqs2 GPU Quickstart](docs/MMSEQS2_GPU_QUICKSTART.md)
+- Existing MMseqs2 DBs are auto-detected and skipped; use `rm -rf ~/.cache/alphafold/mmseqs2` to force rebuild.
+- Integration details: [docs/MMSEQS2_INSTALLER_INTEGRATION.md](docs/MMSEQS2_INSTALLER_INTEGRATION.md).
 
 ## Ports & Services (defaults)
 
@@ -61,6 +84,11 @@ Monitor a job from the CLI (helps detect “is it hung?” and prints progress +
 ## Where to go next
 
 - New here? Start with [START_HERE.md](START_HERE.md)
+- **🔥 IMPORTANT FOR AI AGENTS**: [INSTITUTIONAL_KNOWLEDGE.md](INSTITUTIONAL_KNOWLEDGE.md) - Complete GPU/MMseqs2 optimization work (10x speedup achieved!)
+- **GPU Integration Summary**: [INTEGRATION_COMPLETE.md](INTEGRATION_COMPLETE.md) - All GPU/CUDA 13.1/MMseqs2 work verified (34/34 checks)
+- **Zero-Touch GPU Setup**: [ZERO_TOUCH_GPU_COMPLETE.md](ZERO_TOUCH_GPU_COMPLETE.md) - Automated GPU configuration details
+- **Performance optimizations**: [docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) **(29% faster)**
+- **MMseqs2 GPU Guide**: [docs/MMSEQS2_GPU_QUICKSTART.md](docs/MMSEQS2_GPU_QUICKSTART.md) - User guide for 10x speedup
 - Docker + MCP stack details: [docs/DOCKER_MCP_README.md](docs/DOCKER_MCP_README.md)
 - Deployment compose files: [deploy/](deploy/)
 - Architecture/background: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)

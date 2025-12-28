@@ -42,7 +42,7 @@ services:
     environment:
       - MCP_CONFIG_PATH=/config/mcp_config.json
       - MCP_ROUTING_MODE=${MCP_ROUTING_MODE:-fallback}
-      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-nim,external,embedded}
+      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-embedded,external,nim}
 
       # AlphaFold CPU runs can take a long time; avoid premature httpx ReadTimeout.
       - MCP_NIM_INFERENCE_TIMEOUT_S=${MCP_NIM_INFERENCE_TIMEOUT_S:-10800}
@@ -50,11 +50,18 @@ services:
       # Run MCP server on the expected host port when using host networking.
       - PORT=${MCP_SERVER_HOST_PORT:-8011}
 
-      # Route AlphaFold2 + RFdiffusion to host-native services.
-      - ALPHAFOLD_URL=${ALPHAFOLD_URL:-http://127.0.0.1:18081}
-      - RFDIFFUSION_URL=${RFDIFFUSION_URL:-http://127.0.0.1:18082}
-      - PROTEINMPNN_URL=${PROTEINMPNN_URL:-http://127.0.0.1:${PROTEINMPNN_HOST_PORT:-18083}}
-      - ALPHAFOLD_MULTIMER_URL=${ALPHAFOLD_MULTIMER_URL:-http://127.0.0.1:18084}
+      # Prefer local inference via the External provider (NIM-compatible wrappers).
+      - EXTERNAL_ALPHAFOLD_URL=${EXTERNAL_ALPHAFOLD_URL:-http://127.0.0.1:18081}
+      - EXTERNAL_RFDIFFUSION_URL=${EXTERNAL_RFDIFFUSION_URL:-http://127.0.0.1:18082}
+      - EXTERNAL_PROTEINMPNN_URL=${EXTERNAL_PROTEINMPNN_URL:-http://127.0.0.1:${PROTEINMPNN_HOST_PORT:-18083}}
+      - EXTERNAL_ALPHAFOLD_MULTIMER_URL=${EXTERNAL_ALPHAFOLD_MULTIMER_URL:-http://127.0.0.1:18084}
+
+      # Avoid implying NVIDIA NIM is required; users can still enable NIM by
+      # setting these env vars explicitly.
+      - ALPHAFOLD_URL=${ALPHAFOLD_URL:-disabled}
+      - RFDIFFUSION_URL=${RFDIFFUSION_URL:-disabled}
+      - PROTEINMPNN_URL=${PROTEINMPNN_URL:-disabled}
+      - ALPHAFOLD_MULTIMER_URL=${ALPHAFOLD_MULTIMER_URL:-disabled}
 
       - MCP_EMBEDDED_AUTO_DOWNLOAD=${MCP_EMBEDDED_AUTO_DOWNLOAD:-1}
       - MCP_BOOTSTRAP_ON_STARTUP=${MCP_BOOTSTRAP_ON_STARTUP:-1}

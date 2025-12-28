@@ -25,6 +25,7 @@ import logging
 # Import model backend abstraction
 from model_backends import BackendManager, EmbeddedBackend, allow_mock_outputs
 from runtime_config import RuntimeConfigManager
+from gpu_init import setup_gpu_for_server
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,11 +35,23 @@ logger = logging.getLogger(__name__)
 config_manager = RuntimeConfigManager()
 backend_manager = BackendManager(config_manager)
 
+# Initialize GPU optimizations on startup
+logger.info("Initializing GPU optimizations...")
+gpu_optimizer = setup_gpu_for_server(profile_inference=os.getenv('PROFILE_INFERENCE', '').lower() == 'true')
+logger.info(f"GPU optimization status: {gpu_optimizer.get_diagnostics()}")
+
 app = FastAPI(
     title="Protein Binder Design MCP Server",
     description=f"Model Context Protocol server for managing protein design workflows\nBackend: {os.getenv('MODEL_BACKEND', 'nim')}",
     version="1.0.0"
 )
+
+
+# GPU Status Endpoint
+@app.get("/api/gpu/status")
+async def get_gpu_status():
+    """Get GPU optimization status and diagnostics"""
+    return gpu_optimizer.get_diagnostics()
 
 
 def _truthy_env(name: str) -> bool:
@@ -152,6 +165,71 @@ async def reset_runtime_config() -> Dict[str, Any]:
         raise HTTPException(status_code=403, detail=str(exc))
 
 
+# AlphaFold optimization settings endpoints
+@app.get("/api/alphafold/settings")
+async def get_alphafold_settings() -> Dict[str, Any]:
+    """Get current AlphaFold optimization settings."""
+    return alphafold_settings
+
+
+@app.post("/api/alphafold/settings")
+async def update_alphafold_settings(request: Request) -> Dict[str, Any]:
+    """Update AlphaFold optimization settings.
+    
+    Body:
+      {
+        "speed_preset": "balanced",
+        "disable_templates": false,
+        "num_recycles": 3,
+        "num_ensemble": 1,
+        "mmseqs2_max_seqs": 512,
+        "msa_mode": "mmseqs2"
+      }
+    """
+    global alphafold_settings
+    
+    try:
+        payload = await request.json()
+        # Validate and merge settings
+        settings = AlphaFoldOptimizationSettings(**payload)
+        
+        # Update global settings (keep existing values if not provided)
+        for key, value in settings.model_dump(exclude_unset=True).items():
+            if value is not None:
+                alphafold_settings[key] = value
+        
+        return {
+            "success": True,
+            "settings": alphafold_settings,
+            "message": "AlphaFold settings updated successfully"
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid settings: {str(exc)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/alphafold/settings/reset")
+async def reset_alphafold_settings() -> Dict[str, Any]:
+    """Reset AlphaFold settings to defaults."""
+    global alphafold_settings
+    
+    alphafold_settings = {
+        "speed_preset": "balanced",
+        "disable_templates": False,
+        "num_recycles": 3,
+        "num_ensemble": 1,
+        "mmseqs2_max_seqs": 512,
+        "msa_mode": "mmseqs2",
+    }
+    
+    return {
+        "success": True,
+        "settings": alphafold_settings,
+        "message": "AlphaFold settings reset to defaults"
+    }
+
+
 @app.post("/api/embedded/bootstrap")
 async def embedded_bootstrap(request: Request) -> Dict[str, Any]:
     """Trigger a best-effort embedded download/bootstrap.
@@ -218,6 +296,43 @@ class ProteinSequenceInput(BaseModel):
     sequence: str = Field(..., description="Target protein amino acid sequence")
     job_name: Optional[str] = Field(None, description="Optional name for the job")
     num_designs: int = Field(5, description="Number of binder designs to generate")
+
+# AlphaFold optimization settings
+class AlphaFoldOptimizationSettings(BaseModel):
+    speed_preset: Optional[str] = Field(
+        "balanced",
+        description="Speed preset: fast (29% faster), balanced (20% faster, default), quality (slowest)"
+    )
+    disable_templates: Optional[bool] = Field(
+        None,
+        description="Disable template search for speed"
+    )
+    num_recycles: Optional[int] = Field(
+        None,
+        description="Number of recycling iterations (3 for speed, -1 for model default ~20)"
+    )
+    num_ensemble: Optional[int] = Field(
+        None,
+        description="Number of ensemble evaluations (1 for speed, 8 for quality)"
+    )
+    mmseqs2_max_seqs: Optional[int] = Field(
+        None,
+        description="Maximum sequences for MMseqs2 MSA (512 for speed, 10000 for quality)"
+    )
+    msa_mode: Optional[str] = Field(
+        None,
+        description="MSA generation mode: jackhmmer or mmseqs2"
+    )
+
+# Global AlphaFold settings (in-memory, can be expanded to persistence)
+alphafold_settings: Dict[str, Any] = {
+    "speed_preset": "balanced",
+    "disable_templates": False,
+    "num_recycles": 3,
+    "num_ensemble": 1,
+    "mmseqs2_max_seqs": 512,
+    "msa_mode": "mmseqs2",
+}
     
 class JobStatus(BaseModel):
     job_id: str
@@ -428,6 +543,55 @@ async def list_tools() -> Dict[str, List[ToolInfo]]:
                     },
                     "required": ["sequences"]
                 }
+            ),
+            ToolInfo(
+                name="get_alphafold_settings",
+                description="Get current AlphaFold optimization settings",
+                inputSchema={
+                    "type": "object",
+                    "properties": {}
+                }
+            ),
+            ToolInfo(
+                name="update_alphafold_settings",
+                description="Update AlphaFold optimization settings (speed_preset, disable_templates, num_recycles, etc.)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "speed_preset": {
+                            "type": "string",
+                            "description": "Speed preset: fast (29% faster), balanced (20% faster, default), quality (slowest)"
+                        },
+                        "disable_templates": {
+                            "type": "boolean",
+                            "description": "Disable template search for speed"
+                        },
+                        "num_recycles": {
+                            "type": "integer",
+                            "description": "Number of recycling iterations (3 for speed, -1 for model default ~20)"
+                        },
+                        "num_ensemble": {
+                            "type": "integer",
+                            "description": "Number of ensemble evaluations"
+                        },
+                        "mmseqs2_max_seqs": {
+                            "type": "integer",
+                            "description": "Maximum sequences for MMseqs2 MSA"
+                        },
+                        "msa_mode": {
+                            "type": "string",
+                            "description": "MSA mode: jackhmmer or mmseqs2"
+                        }
+                    }
+                }
+            ),
+            ToolInfo(
+                name="reset_alphafold_settings",
+                description="Reset AlphaFold optimization settings to defaults",
+                inputSchema={
+                    "type": "object",
+                    "properties": {}
+                }
             )
         ]
     }
@@ -460,6 +624,8 @@ async def mcp_jsonrpc(request: Request) -> Dict[str, Any]:
 
     This is in addition to the REST-style MCP endpoints under /mcp/v1/*.
     """
+    global alphafold_settings
+    
     try:
         message = await request.json()
     except Exception:
@@ -653,6 +819,60 @@ async def mcp_jsonrpc(request: Request) -> Dict[str, Any]:
                 return _jsonrpc_result(
                     msg_id,
                     {"content": [{"type": "text", "text": json.dumps(result, indent=2)}], "isError": False},
+                )
+
+            if name == "get_alphafold_settings":
+                return _jsonrpc_result(
+                    msg_id,
+                    {"content": [{"type": "text", "text": json.dumps(alphafold_settings, indent=2)}], "isError": False},
+                )
+
+            if name == "update_alphafold_settings":
+                try:
+                    settings_input = AlphaFoldOptimizationSettings(**arguments)
+                    # Update global settings
+                    for key, value in settings_input.model_dump(exclude_unset=True).items():
+                        if value is not None:
+                            alphafold_settings[key] = value
+                    return _jsonrpc_result(
+                        msg_id,
+                        {
+                            "content": [{
+                                "type": "text",
+                                "text": json.dumps({
+                                    "success": True,
+                                    "settings": alphafold_settings,
+                                    "message": "AlphaFold settings updated successfully"
+                                }, indent=2)
+                            }],
+                            "isError": False,
+                        },
+                    )
+                except Exception as exc:
+                    return _jsonrpc_error(msg_id, -32602, f"Invalid settings: {str(exc)}")
+
+            if name == "reset_alphafold_settings":
+                alphafold_settings = {
+                    "speed_preset": "balanced",
+                    "disable_templates": False,
+                    "num_recycles": 3,
+                    "num_ensemble": 1,
+                    "mmseqs2_max_seqs": 512,
+                    "msa_mode": "mmseqs2",
+                }
+                return _jsonrpc_result(
+                    msg_id,
+                    {
+                        "content": [{
+                            "type": "text",
+                            "text": json.dumps({
+                                "success": True,
+                                "settings": alphafold_settings,
+                                "message": "AlphaFold settings reset to defaults"
+                            }, indent=2)
+                        }],
+                        "isError": False,
+                    },
                 )
 
             return _jsonrpc_error(msg_id, -32601, f"Unknown tool: {name}")

@@ -1,6 +1,6 @@
 #!/bin/bash
 # End-to-End Validation Script
-# Tests complete installation and workflow
+# Tests complete installation and workflow including GPU optimization
 
 set -e
 
@@ -10,6 +10,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
 NC='\033[0m'
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -17,6 +18,7 @@ log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_test() { echo -e "${CYAN}[TEST]${NC} $1"; }
+log_header() { echo -e "${MAGENTA}$1${NC}"; }
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,6 +30,8 @@ TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_SKIPPED=0
+GPU_TESTS_PASSED=0
+GPU_TESTS_FAILED=0
 
 # Run a test
 run_test() {
@@ -355,6 +359,37 @@ if [ $TESTS_FAILED -eq 0 ]; then
     echo "  4. Open: http://localhost:3000"
     echo ""
     
+    # Run GPU optimization tests
+    echo ""
+    log_header "=== GPU Optimization Validation ==="
+    echo ""
+    
+    if [ -f "$PROJECT_ROOT/.env.gpu" ]; then
+        log_test "GPU configuration file exists"
+        . "$PROJECT_ROOT/.env.gpu" 2>/dev/null
+        log_success "  PASSED (GPU Type: $GPU_TYPE, Count: $GPU_COUNT)"
+        GPU_TESTS_PASSED=$((GPU_TESTS_PASSED + 1))
+        
+        log_test "GPU optimization environment variables"
+        if [ -n "$JAX_PLATFORMS" ] && [ -n "$ENABLE_GPU_OPTIMIZATION" ]; then
+            log_success "  PASSED"
+            GPU_TESTS_PASSED=$((GPU_TESTS_PASSED + 1))
+        else
+            log_warning "  SKIPPED (variables not set)"
+        fi
+    else
+        log_warning "GPU configuration not found"
+        log_info "Run: ./scripts/detect_gpu_and_generate_env.sh"
+    fi
+    
+    echo ""
+    log_header "=== Summary ==="
+    echo "Core Tests:     $TESTS_PASSED / $TESTS_RUN passed"
+    if [ $GPU_TESTS_PASSED -gt 0 ]; then
+        echo "GPU Tests:      $GPU_TESTS_PASSED passed"
+    fi
+    echo ""
+    
     exit 0
 else
     log_error "Some tests failed. Please review the errors above."
@@ -366,6 +401,7 @@ else
     echo ""
     echo "For help, see:"
     echo "  $PROJECT_ROOT/docs/NATIVE_TROUBLESHOOTING.md"
+    echo "  $PROJECT_ROOT/docs/ZERO_TOUCH_GPU_OPTIMIZATION_REFACTORING.md"
     echo ""
     
     exit 1

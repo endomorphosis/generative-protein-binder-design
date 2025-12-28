@@ -386,6 +386,16 @@ bash "$ROOT_DIR/scripts/ensure_alphafold_external_binaries.sh" || {
     exit 1
 }
 
+log_info "Installing MMseqs2 (optional fast MSA backend)..."
+# Provision MMseqs2 for the experimental --msa_mode=mmseqs2 path.
+# Keep it optional at runtime; we do not enable it by default.
+if [[ -f "$ROOT_DIR/scripts/install_mmseqs2.sh" ]]; then
+    bash "$ROOT_DIR/scripts/install_mmseqs2.sh" --conda-env "$CONDA_ENV" --install-only || \
+        log_warning "MMseqs2 install failed (mmseqs2 MSA mode will be unavailable)"
+else
+    log_warning "Missing scripts/install_mmseqs2.sh; skipping MMseqs2 install"
+fi
+
 log_info "Installing OpenMM + pdbfixer (for relaxation import/runtime)..."
 # Even if relaxation is disabled at runtime, some AlphaFold versions import relax modules.
 # Install these to keep the environment robust.
@@ -680,6 +690,21 @@ download_databases() {
 
 download_databases
 
+# Optionally build an MMseqs2 DB from the reduced/full FASTA set (default UniRef90).
+if [[ -f "$ROOT_DIR/scripts/install_mmseqs2.sh" ]]; then
+    MMSEQS2_ENV="$(bash "$ROOT_DIR/scripts/install_mmseqs2.sh" \
+        --conda-env "$CONDA_ENV" \
+        --data-dir "$DATA_DIR" \
+        --db-tier "$DB_TIER" \
+        --build-db \
+        --print-env 2>/dev/null || true)"
+    if [[ -n "${MMSEQS2_ENV:-}" ]]; then
+        eval "$MMSEQS2_ENV" || true
+    fi
+else
+    log_warning "Missing scripts/install_mmseqs2.sh; skipping MMseqs2 DB build"
+fi
+
 # Step 8: Create wrapper scripts and validate
 log_step "Step 8/8: Creating wrapper scripts"
 
@@ -697,6 +722,11 @@ export ALPHAFOLD_DIR="$ALPHAFOLD_DIR"
 export ALPHAFOLD_DATA_DIR="$DATA_DIR"
 export ALPHAFOLD_DB_TIER="$DB_TIER"
 export PYTHONPATH="$ALPHAFOLD_DIR:\$PYTHONPATH"
+
+# Optional: MMseqs2 fast MSA backend support.
+# Not enabled by default; set ALPHAFOLD_MSA_MODE=mmseqs2 at runtime.
+export ALPHAFOLD_MMSEQS2_BINARY_PATH="$(command -v mmseqs 2>/dev/null || true)"
+export ALPHAFOLD_MMSEQS2_DATABASE_PATH="${ALPHAFOLD_MMSEQS2_DATABASE_PATH:-}"
 
 echo "AlphaFold2 environment activated"
 echo "  Data directory: \$ALPHAFOLD_DATA_DIR"
@@ -835,6 +865,8 @@ ALPHAFOLD_INSTALL_ROOT=$ALPHAFOLD_INSTALL_ROOT
 ALPHAFOLD_DATA_DIR=$DATA_DIR
 ALPHAFOLD_DB_TIER=$DB_TIER
 ALPHAFOLD_GPU_TYPE=$GPU_TYPE
+ALPHAFOLD_MMSEQS2_BINARY_PATH=$(command -v mmseqs 2>/dev/null || true)
+ALPHAFOLD_MMSEQS2_DATABASE_PATH=${ALPHAFOLD_MMSEQS2_DATABASE_PATH:-}
 ALPHAFOLD_NATIVE_OUTPUT_PDB=ranked_0.pdb
 ALPHAFOLD_NATIVE_CMD="PYTHONPATH=$ALPHAFOLD_DIR:\$PYTHONPATH conda run -n $CONDA_ENV python $ALPHAFOLD_DIR/run_alphafold.py --data_dir=$DATA_DIR --db_preset=$DB_PRESET_VALUE --model_preset=monomer --models_to_relax=none --use_gpu_relax=false --max_template_date=2022-12-31 --uniref90_database_path=$DATA_DIR/uniref90/uniref90.fasta --mgnify_database_path=$DATA_DIR/mgnify/mgy_clusters_2022_05.fa --pdb70_database_path=$DATA_DIR/pdb70/pdb70 $UNIREf30_FLAG_VALUE $BFD_FLAG_VALUE --template_mmcif_dir=$DATA_DIR/pdb_mmcif/mmcif_files --obsolete_pdbs_path=$DATA_DIR/pdb_mmcif/obsolete.dat --fasta_paths={fasta} --output_dir={out_dir}"
 ALPHAFOLD_MULTIMER_NATIVE_CMD="PYTHONPATH=$ALPHAFOLD_DIR:\$PYTHONPATH conda run -n $CONDA_ENV python $ALPHAFOLD_DIR/run_alphafold.py --data_dir=$DATA_DIR --db_preset=$DB_PRESET_VALUE --model_preset=multimer --models_to_relax=none --use_gpu_relax=false --max_template_date=2022-12-31 --uniref90_database_path=$DATA_DIR/uniref90/uniref90.fasta --mgnify_database_path=$DATA_DIR/mgnify/mgy_clusters_2022_05.fa --pdb_seqres_database_path=$DATA_DIR/pdb_seqres/pdb_seqres.txt --uniprot_database_path=$DATA_DIR/uniprot/uniprot.fasta $UNIREf30_FLAG_VALUE $BFD_FLAG_VALUE --template_mmcif_dir=$DATA_DIR/pdb_mmcif/mmcif_files --obsolete_pdbs_path=$DATA_DIR/pdb_mmcif/obsolete.dat --fasta_paths={fasta} --output_dir={out_dir}"

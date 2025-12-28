@@ -13,12 +13,16 @@ services:
       dockerfile: mcp-server/Dockerfile
     ports:
       - "${MCP_SERVER_HOST_PORT:-8011}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Persist dashboard-editable config and embedded downloads.
       - ./dgx-spark/mcp_config.json:/config/mcp_config.json:ro
       - ${DGX_MODELS_DIR:-/data/mcp-models}:/models
     environment:
       - MCP_CONFIG_PATH=/config/mcp_config.json
+      # Prefer local inference if available.
+      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-embedded,external,nim}
       # Enable non-blocking staged provisioning (downloads still require explicit URLs).
       - MCP_EMBEDDED_AUTO_DOWNLOAD=${MCP_EMBEDDED_AUTO_DOWNLOAD:-1}
       - MCP_BOOTSTRAP_ON_STARTUP=${MCP_BOOTSTRAP_ON_STARTUP:-1}

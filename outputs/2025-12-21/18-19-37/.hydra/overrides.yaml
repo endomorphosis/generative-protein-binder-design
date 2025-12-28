@@ -1,4 +1,0 @@
-- inference.model_directory_path=/home/barberb/.cache/rfdiffusion/models
-- inference.input_pdb=/tmp/rfdiffusion_native_83ywi98j/target.pdb
-- inference.output_prefix=/tmp/rfdiffusion_native_83ywi98j/out/design_0
-- inference.num_designs=1
