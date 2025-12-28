@@ -30,7 +30,7 @@ Submit a demo job:
 ./scripts/submit_demo_job.sh
 ```
 
-Monitor a job from the CLI (helps detect “is it hung?” and prints progress + cache/mem metrics):
+Monitor a job from the CLI (helps detect "is it hung?" and prints progress + cache/mem metrics):
 
 ```bash
 ./scripts/monitor_job.sh <job_id> --metrics
@@ -84,7 +84,11 @@ Notes:
 ## Where to go next
 
 - New here? Start with [START_HERE.md](START_HERE.md)
+- **🔥 IMPORTANT FOR AI AGENTS**: [INSTITUTIONAL_KNOWLEDGE.md](INSTITUTIONAL_KNOWLEDGE.md) - Complete GPU/MMseqs2 optimization work (10x speedup achieved!)
+- **GPU Integration Summary**: [INTEGRATION_COMPLETE.md](INTEGRATION_COMPLETE.md) - All GPU/CUDA 13.1/MMseqs2 work verified (34/34 checks)
+- **Zero-Touch GPU Setup**: [ZERO_TOUCH_GPU_COMPLETE.md](ZERO_TOUCH_GPU_COMPLETE.md) - Automated GPU configuration details
 - **Performance optimizations**: [docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) **(29% faster)**
+- **MMseqs2 GPU Guide**: [docs/MMSEQS2_GPU_QUICKSTART.md](docs/MMSEQS2_GPU_QUICKSTART.md) - User guide for 10x speedup
 - Docker + MCP stack details: [docs/DOCKER_MCP_README.md](docs/DOCKER_MCP_README.md)
 - Deployment compose files: [deploy/](deploy/)
 - Architecture/background: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
