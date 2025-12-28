@@ -276,6 +276,29 @@ if [ "$INSTALL_ALPHAFOLD" = true ]; then
             if [[ -f "$MMSEQS2_OUTPUT/uniref90_db.dbtype" ]]; then
                 log_success "MMseqs2 databases verified: $MMSEQS2_OUTPUT"
                 echo "MMSEQS2_DB_PATH=$MMSEQS2_OUTPUT" >> "$INSTALLATION_LOG"
+                
+                # Auto-setup GPU server mode if GPU is available
+                if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+                    log_step "Configuring MMseqs2 GPU server mode..."
+                    if bash "$SCRIPT_DIR/setup_mmseqs2_gpu_server.sh" "$MMSEQS2_OUTPUT/uniref90_db" 2>&1 | tee -a "$INSTALLATION_LOG"; then
+                        log_success "GPU server mode configured"
+                        log_installation "MMseqs2 GPU: SUCCESS"
+                        
+                        # Add GPU server instructions to installation log
+                        cat >> "$INSTALLATION_LOG" << 'GPUINFO'
+
+MMseqs2 GPU Server Setup:
+  To start GPU server: nohup ~/.local/bin/mmseqs2-gpu-server &
+  Or install as service: sudo cp ~/.local/share/mmseqs2-gpu-server.service /etc/systemd/system/ && sudo systemctl enable --now mmseqs2-gpu-server
+  Expected speedup: 5-10x faster than CPU-only mode
+GPUINFO
+                    else
+                        log_warning "GPU server setup failed (non-critical)"
+                        log_installation "MMseqs2 GPU: WARNING"
+                    fi
+                else
+                    log_info "No GPU detected, skipping GPU server setup"
+                fi
             fi
         else
             log_warning "MMseqs2 database build failed (non-critical, continuing...)"
@@ -512,6 +535,21 @@ if [ "$INSTALL_ALPHAFOLD" = true ]; then
     if [ -f "${MMSEQS2_DB}.dbtype" ] || [ -d "$MMSEQS2_DB" ]; then
         echo "  MMseqs2 Database: $MMSEQS2_DB"
         echo "  MSA Mode: mmseqs2 (optimized) or jackhmmer"
+        
+        # Check for GPU server setup
+        if [ -f "$HOME/.local/bin/mmseqs2-gpu-server" ]; then
+            echo ""
+            echo "  🚀 GPU Acceleration Available:"
+            echo "    Start GPU server: nohup ~/.local/bin/mmseqs2-gpu-server &"
+            echo "    Use in searches: --gpu-server 1 flag"
+            echo "    Expected speedup: 5-10x faster than CPU"
+            if [ -f "$HOME/.local/share/mmseqs2-gpu-server.service" ]; then
+                echo ""
+                echo "  📦 Or install as systemd service:"
+                echo "    sudo cp ~/.local/share/mmseqs2-gpu-server.service /etc/systemd/system/"
+                echo "    sudo systemctl enable --now mmseqs2-gpu-server"
+            fi
+        fi
     fi
     echo ""
 fi
