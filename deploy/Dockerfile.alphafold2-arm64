@@ -1,103 +1,42 @@
-# AlphaFold2 ARM64 Native Dockerfile
-# This builds AlphaFold2 natively for ARM64/aarch64 architecture
+# AlphaFold2 ARM64 Service (lightweight shim)
+#
+# This image provides a minimal NIM-compatible HTTP API for the MCP server:
+#   - GET  /v1/health/ready
+#   - POST /v1/structure
+#
+# It uses the repo's ARM64 runner (mock/fallback implementation). It does NOT
+# bundle full AlphaFold databases/weights.
+# Includes GPU optimization for NVIDIA-based systems.
 
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 AS builder
+FROM python:3.11-slim
 
-# Set to non-interactive to avoid timezone prompts
-ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    git \
+# Install wget and build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
-    curl \
-    python3.10 \
-    python3.10-dev \
-    python3-pip \
-    libhdf5-dev \
-    libopenblas-dev \
-    liblapack-dev \
-    gfortran \
-    hmmer \
-    kalign \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Set python3.10 as default
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+RUN pip install --no-cache-dir fastapi uvicorn pydantic jax
 
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip setuptools wheel
+COPY tools/alphafold2_arm64/alphafold_runner.py /app/alphafold_runner.py
+COPY deploy/arm64_api/alphafold_service.py /app/service.py
+COPY scripts/init_models.sh /app/init_models.sh
+COPY scripts/setup_gpu_optimization.sh /app/setup_gpu_optimization.sh
 
-# Install JAX for ARM64 with CUDA support
-# Note: Building JAX from source for ARM64 CUDA is complex, starting with CPU version
-RUN pip install --no-cache-dir \
-    "jax[cpu]>=0.4.13" \
-    jaxlib \
-    dm-haiku \
-    dm-tree \
-    ml-collections \
-    numpy \
-    pandas \
-    scipy \
-    absl-py
+# Make scripts executable
+RUN chmod +x /app/init_models.sh /app/setup_gpu_optimization.sh
 
-# Install AlphaFold dependencies
-RUN pip install --no-cache-dir \
-    biopython \
-    chex \
-    docker \
-    immutabledict \
-    tensorflow-cpu \
-    && rm -rf ~/.cache/pip
+# Environment for GPU optimization
+ENV JAX_PLATFORMS=gpu
+ENV TF_XLA_CACHE_DIR=/cache/jax/xla_cache
+ENV ENABLE_GPU_OPTIMIZATION=true
 
-# Clone AlphaFold repository
-WORKDIR /opt
-RUN git clone https://github.com/deepmind/alphafold.git
-
-WORKDIR /opt/alphafold
-
-# Install AlphaFold
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Create data directories
-RUN mkdir -p /opt/alphafold/data
-
-# Runtime stage
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    python3.10 \
-    python3-pip \
-    hmmer \
-    kalign \
-    aria2 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy Python packages from builder
-COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
-COPY --from=builder /opt/alphafold /opt/alphafold
-
-WORKDIR /opt/alphafold
-
-# Set environment variables
-ENV PYTHONPATH="/opt/alphafold:${PYTHONPATH}"
-ENV PATH="/opt/alphafold:${PATH}"
-
-# Create directory for model weights
-RUN mkdir -p /models
-
-# Expose port for inference server
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import jax; import haiku; print('AlphaFold2 ARM64 OK')" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import service; print('ok')" || exit 1
 
-# Default command
-CMD ["python3", "-m", "alphafold.run_alphafold", "--help"]
+# Setup GPU optimizations and run service
+CMD ["/bin/bash", "-c", "/app/setup_gpu_optimization.sh && /app/init_models.sh || true && python -m uvicorn service:app --host 0.0.0.0 --port 8000"]

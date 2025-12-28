@@ -1,0 +1,155 @@
+Query         test70
+Match_columns 70
+No_of_seqs    1 out of 1
+Neff          1
+Searched_HMMs 80799
+Date          Fri Dec 26 08:29:24 2025
+Command       /usr/bin/hhsearch -i /tmp/tmp5vao24g4/query.a3m -o /tmp/tmp5vao24g4/output.hhr -maxseq 1000000 -cpu 16 -d /home/barberb/.cache/alphafold/pdb70/pdb70 
+
+ No Hit                             Prob E-value P-value  Score    SS Cols Query HMM  Template HMM
+  1 11AS_B ASPARAGINE SYNTHETASE,   96.9 1.3E-05 1.6E-10   57.5   0.0   62    1-62      1-62  (330)
+  2 12AS_A ASPARAGINE SYNTHETASE,   96.9 1.3E-05 1.6E-10   57.5   0.0   62    1-62      1-62  (330)
+  3 4LNS_A Asparagine synthetase a  95.9 0.00049 6.1E-09   50.8   0.0   62    1-62      5-66  (351)
+  4 5VJI_A Circadian locomoter out  21.3      82   0.001   20.1   0.0   10   11-20     13-22  (51)
+  5 5VJX_H CLOCK-interacting pacem  21.3      82   0.001   20.1   0.0   10   11-20     13-22  (51)
+  6 5VJX_f CLOCK-interacting pacem  21.3      82   0.001   20.1   0.0   10   11-20     13-22  (51)
+  7 1DD4_D 50S RIBOSOMAL PROTEIN L  18.0 1.1E+02  0.0013   16.7   0.0   13   17-29     19-31  (40)
+  8 2IZX_A CAMP-DEPENDENT PROTEIN   14.4 1.5E+02  0.0019   14.9   0.0   15   12-26     27-41  (41)
+  9 2OKG_A Central glycolytic gene  12.5 1.9E+02  0.0023   19.6   0.0   15   18-32     11-25  (255)
+ 10 3BXH_B Central glycolytic gene  12.5 1.9E+02  0.0023   19.6   0.0   15   18-32     11-25  (255)
+
+No 1
+>11AS_B ASPARAGINE SYNTHETASE, L-ASPARAGINE; LIGASE, ASPARAGINE SYNTHETASE, NITROGEN FIXATION; HET: ASN; 2.5A {Escherichia coli K12} SCOP: d.104.1.1
+Probab=96.89  E-value=1.3e-05  Score=57.48  Aligned_cols=62  Identities=100%  Similarity=1.282  Sum_probs=53.0  Template_Neff=7.800
+
+Q test70            1 MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKAL   62 (70)
+Q Consensus         1 mktayiakqrqisfvkshfsrqleerlglievqapilsrvgdgtqdnlsgaekavqvkvkal   62 (70)
+                      |+.+++.++++|++||++|.+.+..++||+||+||++++..++++++|++++++|+|++.++
+T Consensus         1 ~~~~~~~~~~~i~~ir~~~~~~l~~~~gf~eV~tP~l~~~~~~~~~~~e~~~~~~~F~~~~~   62 (330)
+T 11AS_B            1 MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKAL   62 (330)
+T ss_dssp             ---CHHHHHHHHHHHHHHHHHHHHHSSCEEECCCCSEEETTSSCSCCTTSCCCCCCCCCTTC
+T ss_pred             CcchHHHHHHHHHHHHHHHHHHHHHHhCCEEEeCCEEEecCCCcccccCCcccceEEEeccC
+Confidence            45788999999999999999888888999999999999988888888888899977776654
+
+
+No 2
+>12AS_A ASPARAGINE SYNTHETASE, L-ASPARAGINE, ADENOSINE MONOPHOSPHATE; LIGASE, ASPARAGINE SYNTHETASE, NITROGEN FIXATION; HET: AMP, ASN; 2.2A {Escherichia coli K12} SCOP: d.104.1.1
+Probab=96.89  E-value=1.3e-05  Score=57.48  Aligned_cols=62  Identities=100%  Similarity=1.282  Sum_probs=53.0  Template_Neff=7.800
+
+Q test70            1 MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKAL   62 (70)
+Q Consensus         1 mktayiakqrqisfvkshfsrqleerlglievqapilsrvgdgtqdnlsgaekavqvkvkal   62 (70)
+                      |+.+++.++++|++||++|.+.+..++||+||+||++++..++++++|++++++|+|++.++
+T Consensus         1 ~~~~~~~~~~~i~~ir~~~~~~l~~~~gf~eV~tP~l~~~~~~~~~~~e~~~~~~~F~~~~~   62 (330)
+T 12AS_A            1 MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKAL   62 (330)
+T ss_dssp             ---CHHHHHHHHHHHHHHHHHHHHHHHCEEECCCCSEEETTSSCSCCTTTTCCCCEECCSSS
+T ss_pred             CcchHHHHHHHHHHHHHHHHHHHHHHhCCEEEeCCEEEecCCCcccccCCcccceEEEeccC
+Confidence            45788999999999999999888888999999999999988888888888899977776654
+
+
+No 3
+>4LNS_A Asparagine synthetase a (E.C.6.3.1.1); Asparagine synthetase A, LIGASE; 2.2A {Trypanosoma brucei brucei}
+Probab=95.87  E-value=0.00049  Score=50.75  Aligned_cols=62  Identities=63%  Similarity=0.807  Sum_probs=49.0  Template_Neff=7.300
+
+Q test70            1 MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKAL   62 (70)
+Q Consensus         1 mktayiakqrqisfvkshfsrqleerlglievqapilsrvgdgtqdnlsgaekavqvkvkal   62 (70)
+                      .|.+++.++++|..||++|.+.+..++||+||+||++++..+|++++++|+++||+|++.++
+T Consensus         5 ~~~~~~~~~~~i~~ir~~~~~~~~~~~gf~EV~tP~l~~~~~~~~~~~eg~~~~~~F~~~~~   66 (351)
+T 4LNS_A            5 GYSSYVLLQEQILTVKRSFSEALEKELNLVEVRAPILFRVGDGTQDNLSGFEKAVQVPVKAI   66 (351)
+T ss_dssp             HHHHHHHHHHHHHHHHHHHHHHHHHHHTEEECCCCSEEETTSSSCC-------CCEEECTTS
+T ss_pred             hhhhHHHHHHHHHHHHHHHHHHHHHHcCCEEEeCCEEEecCCCCCcccCCcccceEeeccCC
+Confidence            36789999999999999999888889999999999999988888888888899977877654
+
+
+No 4
+>5VJI_A Circadian locomoter output cycles protein; circadian rhythm, CLOCK protein, transcription; HET: MSE; 1.86A {Mus musculus}
+Probab=21.33  E-value=82  Score=20.08  Aligned_cols=10  Identities=10%  Similarity=0.378  Sum_probs=4.3  Template_Neff=2.900
+
+Q test70           11 QISFVKSHFS   20 (70)
+Q Consensus        11 qisfvkshfs   20 (70)
+                      +...+++.+.
+T Consensus        13 ~mq~lKeQLE   22 (51)
+T 5VJI_A           13 AMQHLKDQLE   22 (51)
+T ss_dssp             HHHHHHHHHH
+T ss_pred             HHHHHHHHHH
+Confidence            3344444443
+
+
+No 5
+>5VJX_H CLOCK-interacting pacemaker, Circadian locomoter output; circadian rhythm, CLOCK protein, transcription; HET: MSE; 2.695A {Mus musculus}
+Probab=21.33  E-value=82  Score=20.08  Aligned_cols=10  Identities=10%  Similarity=0.378  Sum_probs=4.3  Template_Neff=2.900
+
+Q test70           11 QISFVKSHFS   20 (70)
+Q Consensus        11 qisfvkshfs   20 (70)
+                      +...+++.+.
+T Consensus        13 ~mq~lKeQLE   22 (51)
+T 5VJX_H           13 AMQHLKDQLE   22 (51)
+T ss_dssp             HHHHHHHHHH
+T ss_pred             HHHHHHHHHH
+Confidence            3344444443
+
+
+No 6
+>5VJX_f CLOCK-interacting pacemaker, Circadian locomoter output; circadian rhythm, CLOCK protein, transcription; HET: MSE; 2.695A {Mus musculus}
+Probab=21.33  E-value=82  Score=20.08  Aligned_cols=10  Identities=10%  Similarity=0.378  Sum_probs=4.3  Template_Neff=2.900
+
+Q test70           11 QISFVKSHFS   20 (70)
+Q Consensus        11 qisfvkshfs   20 (70)
+                      +...+++.+.
+T Consensus        13 ~mq~lKeQLE   22 (51)
+T 5VJX_f           13 AMQHLKDQLE   22 (51)
+T ss_pred             HHHHHHHHHH
+Confidence            3344444443
+
+
+No 7
+>1DD4_D 50S RIBOSOMAL PROTEIN L7/L12; DIMER FORMATION, FLEXIBILITY, HINGE REGION; HET: TBR; 2.4A {Thermotoga maritima} SCOP: a.108.1.1
+Probab=18.03  E-value=1.1e+02  Score=16.73  Aligned_cols=13  Identities=23%  Similarity=0.772  Sum_probs=0.0  Template_Neff=6.500
+
+Q test70           17 SHFSRQLEERLGL   29 (70)
+Q Consensus        17 shfsrqleerlgl   29 (70)
+                      +.+...||+++|+
+T Consensus        19 ~~L~~~le~k~gv   31 (40)
+T 1DD4_D           19 AELVKKLEDKFGV   31 (40)
+T ss_dssp             HHHHHHHHHHTTC
+T ss_pred             HHHHHHHHHHHCC
+
+
+No 8
+>2IZX_A CAMP-DEPENDENT PROTEIN KINASE TYPE II-ALPHA; CAMP-BINDING, PHOSPHORYLATION, NUCLEOTIDE-BINDING, PKA, CAMP; HET: DTD; 1.3A {HOMO SAPIENS}
+Probab=14.44  E-value=1.5e+02  Score=14.88  Aligned_cols=15  Identities=33%  Similarity=0.543  Sum_probs=0.0  Template_Neff=8.400
+
+Q test70           12 ISFVKSHFSRQLEER   26 (70)
+Q Consensus        12 isfvkshfsrqleer   26 (70)
+                      +.|...+|++.+++|
+T Consensus        27 ~~f~~~~f~~~~~~~   41 (41)
+T 2IZX_A           27 VEFAVEYFTRLREAR   41 (41)
+T ss_dssp             HHHHHHHHHHHHHHC
+T ss_pred             HHHHHHHHHHHHHhC
+
+
+No 9
+>2OKG_A Central glycolytic gene regulator; alpha/beta/alpha sandwich, Rossmann-like fold, Structural; HET: G3H, MSE; 1.65A {Bacillus subtilis} SCOP: c.124.1.8
+Probab=12.46  E-value=1.9e+02  Score=19.65  Aligned_cols=15  Identities=33%  Similarity=0.569  Sum_probs=0.0  Template_Neff=9.200
+
+Q test70           18 HFSRQLEERLGLIEV   32 (70)
+Q Consensus        18 hfsrqleerlgliev   32 (70)
+                      ...++|++++||-++
+T Consensus        11 ~l~~~l~~~~~l~~~   25 (255)
+T 2OKG_A           11 LLEKTLKERLNLKDA   25 (255)
+T ss_dssp             HHHHHHHHHSCCSEE
+T ss_pred             HHHHHHHHHhCCCEE
+
+
+No 10
+>3BXH_B Central glycolytic gene regulator; effector binding domain, catabolic repressor; HET: F6P; 1.85A {Bacillus subtilis} SCOP: c.124.1.8
+Probab=12.46  E-value=1.9e+02  Score=19.65  Aligned_cols=15  Identities=33%  Similarity=0.569  Sum_probs=0.0  Template_Neff=9.200
+
+Q test70           18 HFSRQLEERLGLIEV   32 (70)
+Q Consensus        18 hfsrqleerlgliev   32 (70)
+                      ...++|++++||-++
+T Consensus        11 ~l~~~l~~~~~l~~~   25 (255)
+T 3BXH_B           11 LLEKTLKERLNLKDA   25 (255)
+T ss_dssp             HHHHHHHHHHTCSEE
+T ss_pred             HHHHHHHHHhCCCEE
+
+

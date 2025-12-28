@@ -59,6 +59,22 @@ cd deploy/
 docker compose up
 ```
 
+Alternatively (recommended), you can start the correct stack from the repo root using the helper script:
+
+```bash
+./scripts/start_everything.sh
+```
+
+To stop everything:
+
+```bash
+./scripts/stop_everything.sh
+```
+
+This script starts the dashboard + MCP server + model backends together, and will ensure `HOST_NIM_CACHE`
+is set to a real path (defaults to `$HOME/.cache/nim`) and that the cache directory exists and is writable
+by the NIM containers.
+
 This will first pull the containers then start them. When the containers start they will
 pull the model for each NIM. This process can take several hours; in the case of AlphaFold2
 and other large models, **expect the model download step to take from three to seven hours**

@@ -1,0 +1,126 @@
+name: protein-binder-dashboard
+
+# Full dashboard stack with auxiliary model services.
+#
+# Start from repo root:
+#   export NGC_CLI_API_KEY=...
+#   mkdir -p ~/.cache/nim && chmod -R 777 ~/.cache/nim
+#   export HOST_NIM_CACHE=~/.cache/nim
+#   docker compose -f deploy/docker-compose-dashboard.yaml up -d
+#
+# Notes:
+# - Model services are published on non-default host ports (18081-18084) to avoid
+#   collisions with other stacks that commonly use 8081-8084.
+# - MCP Server talks to model services over the internal Compose network using
+#   service names (no host port dependency).
+
+services:
+  # --- Auxiliary model services (NIM) ---
+  alphafold:
+    image: nvcr.io/nim/deepmind/alphafold2:2.1
+    pull_policy: always
+    runtime: nvidia
+    platform: linux/amd64
+    ports:
+      - "${ALPHAFOLD_HOST_PORT:-18081}:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-${HOME}/.cache/nim}:/opt/nim/.cache/
+    environment:
+      - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NIM_CACHE_PATH=/opt/nim/.cache
+      - NIM_DISABLE_MODEL_DOWNLOAD=${NIM_DISABLE_MODEL_DOWNLOAD:-False}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+
+  rfdiffusion:
+    image: nvcr.io/nim/ipd/rfdiffusion:2.0
+    pull_policy: always
+    runtime: nvidia
+    platform: linux/amd64
+    ports:
+      - "${RFDIFFUSION_HOST_PORT:-18082}:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-${HOME}/.cache/nim}:/home/nvs/.cache/
+    environment:
+      - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+
+  proteinmpnn:
+    image: nvcr.io/nim/ipd/proteinmpnn:1.0
+    pull_policy: always
+    runtime: nvidia
+    platform: linux/amd64
+    ports:
+      - "${PROTEINMPNN_HOST_PORT:-18083}:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-${HOME}/.cache/nim}:/home/nvs/.cache/
+    environment:
+      - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NIM_CACHE_PATH=/home/nvs/.cache/nim/models
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+
+  alphafold-multimer:
+    image: nvcr.io/nim/deepmind/alphafold2-multimer:2.1
+    pull_policy: always
+    runtime: nvidia
+    platform: linux/amd64
+    ports:
+      - "${ALPHAFOLD_MULTIMER_HOST_PORT:-18084}:8000"
+    volumes:
+      - ${HOST_NIM_CACHE:-${HOME}/.cache/nim}:/opt/nim/.cache/
+    environment:
+      - NGC_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NGC_CLI_API_KEY=${NGC_CLI_API_KEY:?Error NGC_CLI_API_KEY not set}
+      - NIM_CACHE_PATH=/opt/nim/.cache
+      - NIM_DISABLE_MODEL_DOWNLOAD=${NIM_DISABLE_MODEL_DOWNLOAD:-False}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+
+  # --- MCP server ---
+  mcp-server:
+    image: ${MCP_SERVER_IMAGE:-mcp-server:local}
+    build:
+      context: ../mcp-server
+      dockerfile: Dockerfile
+    ports:
+      - "${MCP_SERVER_HOST_PORT:-8011}:8000"
+    volumes:
+      - mcp-config:/config
+      - mcp-models:/models
+    environment:
+      - MODEL_BACKEND=nim
+      - MCP_CONFIG_PATH=/config/mcp_config.json
+      - MCP_ROUTING_MODE=${MCP_ROUTING_MODE:-fallback}
+      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-embedded,nim,external}
+      # Use internal service names so host port remaps don't matter.
+      - ALPHAFOLD_URL=http://alphafold:8000
+      - RFDIFFUSION_URL=http://rfdiffusion:8000
+      - PROTEINMPNN_URL=http://proteinmpnn:8000
+      - ALPHAFOLD_MULTIMER_URL=http://alphafold-multimer:8000
+    depends_on:
+      - alphafold
+      - rfdiffusion
+      - proteinmpnn
+      - alphafold-multimer
+
+  # --- Dashboard ---
+  mcp-dashboard:
+    image: ${MCP_DASHBOARD_IMAGE:-mcp-dashboard:local}
+    build:
+      context: ../mcp-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "${MCP_DASHBOARD_HOST_PORT:-3000}:3000"
+    environment:
+      # Used by server-side Next.js routes (preferred).
+      - MCP_SERVER_URL=http://mcp-server:8000
+      # Fallback for older code paths (not required for current dashboard).
+      - NEXT_PUBLIC_MCP_SERVER_URL=http://mcp-server:8000
+    depends_on:
+      - mcp-server
+
+volumes:
+  mcp-config:
+  mcp-models:

@@ -6,6 +6,9 @@ import JobList from '@/components/JobList'
 import ResultsViewer from '@/components/ResultsViewer'
 import ServiceStatus from '@/components/ServiceStatus'
 import JupyterLauncher from '@/components/JupyterLauncher'
+import ToolsPanel from '@/components/ToolsPanel'
+import BackendSettings from '@/components/BackendSettings'
+import AlphaFoldSettings from '@/components/AlphaFoldSettings'
 import { Job } from '@/lib/types'
 
 export default function Home() {
@@ -20,6 +23,33 @@ export default function Home() {
     setSelectedJob(job)
   }
 
+  useEffect(() => {
+    // Connect to MCP server SSE to receive job updates and trigger refresh
+    let es: EventSource | null = null
+    try {
+      // Use dashboard-proxied SSE so environments don't require hardcoded localhost/ports
+      es = new EventSource('/sse')
+      es.onmessage = (e) => {
+        try {
+          // increment refresh trigger when any event arrives
+          setRefreshTrigger((prev) => prev + 1)
+          console.debug('MCP SSE event:', e.data)
+        } catch (err) {
+          // ignore
+        }
+      }
+      es.onerror = (err) => {
+        console.warn('SSE error', err)
+      }
+    } catch (e) {
+      console.warn('Failed to connect to MCP SSE', e)
+    }
+
+    return () => {
+      if (es) es.close()
+    }
+  }, [])
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <div className="container mx-auto px-4 py-8">
@@ -33,14 +63,22 @@ export default function Home() {
                 NVIDIA BioNeMo Blueprint - MCP Dashboard
               </p>
             </div>
-            {/* NVIDIA Logo would be displayed here if available */}
-            <div className="h-12"></div>
+            <div className="flex items-center gap-3">
+              <BackendSettings />
+              {/* NVIDIA Logo would be displayed here if available */}
+              <div className="h-12"></div>
+            </div>
           </div>
         </header>
 
         {/* Service Status */}
         <div className="mb-8">
           <ServiceStatus />
+        </div>
+
+        {/* AlphaFold Optimization Settings */}
+        <div className="mb-8">
+          <AlphaFoldSettings onSettingsChanged={handleJobCreated} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -51,6 +89,13 @@ export default function Home() {
                 New Design Job
               </h2>
               <ProteinSequenceForm onJobCreated={handleJobCreated} />
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
+              <h2 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">
+                MCP Tools
+              </h2>
+              <ToolsPanel />
             </div>
             
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">

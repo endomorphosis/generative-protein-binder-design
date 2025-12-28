@@ -188,11 +188,11 @@ Your ARM64 GitHub Actions setup is now **production-ready** for:
 ## 🚀 **Next Steps**
 
 1. **✅ COMPLETED**: ARM64 runner setup and verification
-2. **✅ COMPLETED**: Workflow deployment and testing  
+2. **✅ COMPLETED**: Workflow deployment and basic testing
 3. **✅ COMPLETED**: Jupyter notebook execution proof
-4. **🔄 CURRENT**: Ready for production protein design workflows
-5. **📋 TODO**: Run full protein design pipeline with real targets
-6. **📋 TODO**: Set up automated scheduling for regular jobs
+4. **Current status**: CI runner is ready for routine workflows
+5. **Next validation**: Run the full protein design pipeline with your real targets and verify expected artifacts
+6. **Optional**: Add scheduled runs if you want regular/recurring jobs
 
 ---
 

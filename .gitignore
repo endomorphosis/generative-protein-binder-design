@@ -1,98 +1,3 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.next/
-
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Node Modules
-node_modules/
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
-.virtualenv/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb_checkpoints/
-
-# IDEs
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-venv/
-ENV/
-env/
-.venv
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Docker
-.dockerignore
-
-# Conda
-.conda/
-miniforge3/
-
-# NIM cache
-.cache/
-*.cache/
-
-# Logs
-*.log
-logs/
-*.logs/
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.bak
-
-# Test outputs
-test_output/
-test_results/
-pipeline_run_*/
-*.tar.gz
-
-# System verification reports
-*_report.txt
-*_validation_report.txt
-=======
 # Jupyter
 .ipynb_checkpoints/
 
@@ -124,3 +29,30 @@ docker-compose.*.yml
 # Container artifacts
 *.tar
 docker-build-*/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv*
+# Editor/OS
+*.swp
+.env/
+.vscode/
+.DS_Store
+.idea/
+
+# Build artifacts
+dist/
+build/
+coverage/
+*.sqlite3
+*.db
+*.bak
+*.tmp
+*.class
+*.jar
+
+# Generated installer outputs (wrappers, env files)
+tools/generated/

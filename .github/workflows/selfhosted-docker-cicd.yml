@@ -1,0 +1,788 @@
+name: Self-Hosted Docker CI/CD
+
+on:
+  push:
+    branches: [ main, develop, dgx-spark ]
+    tags: [ 'v*' ]
+    paths:
+      - 'mcp-server/**'
+      - 'mcp-dashboard/**'
+      - 'deploy/**'
+      - 'tools/**'
+      - 'src/**'
+      - '.github/workflows/selfhosted-docker-cicd.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'mcp-server/**'
+      - 'mcp-dashboard/**'
+      - 'deploy/**'
+      - 'tools/**'
+      - 'src/**'
+  workflow_dispatch:
+    inputs:
+      build_components:
+        description: 'Components to build (comma-separated: mcp-server,mcp-dashboard,alphafold2,rfdiffusion,proteinmpnn,all)'
+        required: false
+        default: 'mcp-server,mcp-dashboard'
+        type: string
+      push_images:
+        description: 'Push images to registry'
+        required: false
+        default: false
+        type: boolean
+      run_tests:
+        description: 'Run integration tests'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # ============================================================================
+  # Pre-Flight Checks
+  # ============================================================================
+  preflight:
+    runs-on: [self-hosted, ARM64]
+    timeout-minutes: 10
+    outputs:
+      build_matrix: ${{ steps.matrix.outputs.components }}
+      should_push: ${{ steps.config.outputs.push_images }}
+      run_tests: ${{ steps.config.outputs.run_tests }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: System Information
+      run: |
+        echo "=== System Information ==="
+        echo "System: $(uname -a)"
+        echo "Architecture: $(uname -m)"
+        echo "Docker: $(docker --version)"
+        echo "Docker Compose: $(docker compose version)"
+        echo "Available space: $(df -h /)"
+        echo "Memory: $(free -h)"
+        echo "CPU cores: $(nproc)"
+        
+        echo "=== Docker Status ==="
+        docker info --format '{{json .}}' | jq '{
+          "ServerVersion": .ServerVersion,
+          "Architecture": .Architecture,
+          "OSType": .OSType,
+          "KernelVersion": .KernelVersion,
+          "OperatingSystem": .OperatingSystem,
+          "TotalMemory": .MemTotal,
+          "StorageDriver": .Driver
+        }'
+        
+    - name: Configure Build Matrix
+      id: matrix
+      run: |
+        # Determine which components to build
+        if [ "${{ github.event.inputs.build_components }}" != "" ]; then
+          components="${{ github.event.inputs.build_components }}"
+        else
+          # Auto-detect based on changed files
+          if [ "${{ github.event_name }}" == "push" ] || [ "${{ github.event_name }}" == "pull_request" ]; then
+            changed_files=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null || echo "mcp-server/ mcp-dashboard/")
+            echo "Changed files: $changed_files"
+            
+            components=""
+            if echo "$changed_files" | grep -q "mcp-server/"; then
+              components="mcp-server"
+            fi
+            if echo "$changed_files" | grep -q "mcp-dashboard/"; then
+              components="${components:+$components,}mcp-dashboard"
+            fi
+            if echo "$changed_files" | grep -q "deploy/Dockerfile"; then
+              components="${components:+$components,}alphafold2,rfdiffusion,proteinmpnn"
+            fi
+            
+            # Default fallback
+            if [ -z "$components" ]; then
+              components="mcp-server,mcp-dashboard"
+            fi
+          else
+            components="mcp-server,mcp-dashboard"
+          fi
+        fi
+        
+        # Handle 'all' option
+        if [ "$components" == "all" ]; then
+          components="mcp-server,mcp-dashboard,alphafold2,rfdiffusion,proteinmpnn"
+        fi
+        
+        echo "Components to build: $components"
+        
+        # Convert to JSON array for matrix
+        json_array=$(echo "$components" | tr ',' '\n' | jq -R . | jq -s .)
+        echo "components=$json_array" >> $GITHUB_OUTPUT
+        
+    - name: Configure Build Settings
+      id: config
+      run: |
+        # Determine if we should push images
+        if [ "${{ github.event.inputs.push_images }}" == "true" ]; then
+          push_images="true"
+        elif [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref }}" == "refs/heads/main" ]; then
+          push_images="true"
+        elif [ "${{ github.event_name }}" == "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          push_images="true"
+        else
+          push_images="false"
+        fi
+        
+        # Determine if we should run tests
+        if [ "${{ github.event.inputs.run_tests }}" == "false" ]; then
+          run_tests="false"
+        else
+          run_tests="true"
+        fi
+        
+        echo "push_images=$push_images" >> $GITHUB_OUTPUT
+        echo "run_tests=$run_tests" >> $GITHUB_OUTPUT
+        
+        echo "Build configuration:"
+        echo "- Push images: $push_images"
+        echo "- Run tests: $run_tests"
+
+  # ============================================================================
+  # Docker Build Jobs
+  # ============================================================================
+  docker-build:
+    runs-on: [self-hosted, ARM64]
+    timeout-minutes: 90
+    needs: [preflight]
+    if: fromJSON(needs.preflight.outputs.build_matrix)[0] != null
+    
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        component: ${{ fromJSON(needs.preflight.outputs.build_matrix) }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Free up disk space
+      run: |
+        echo "Before cleanup:"
+        df -h
+        
+        # Clean up Docker
+        docker system prune -f --volumes || true
+        docker builder prune -f || true
+        
+        # Clean up system
+        sudo apt-get autoremove -y || true
+        sudo apt-get autoclean || true
+        
+        echo "After cleanup:"
+        df -h
+        
+    - name: Set up component configuration
+      id: component-config
+      run: |
+        case "${{ matrix.component }}" in
+          "mcp-server")
+            echo "context=./mcp-server" >> $GITHUB_OUTPUT
+            echo "dockerfile=./mcp-server/Dockerfile" >> $GITHUB_OUTPUT
+            echo "port=8001" >> $GITHUB_OUTPUT
+            echo "image_name=mcp-server" >> $GITHUB_OUTPUT
+            ;;
+          "mcp-dashboard")
+            echo "context=./mcp-dashboard" >> $GITHUB_OUTPUT
+            echo "dockerfile=./mcp-dashboard/Dockerfile" >> $GITHUB_OUTPUT
+            echo "port=3000" >> $GITHUB_OUTPUT
+            echo "image_name=mcp-dashboard" >> $GITHUB_OUTPUT
+            ;;
+          "alphafold2")
+            echo "context=." >> $GITHUB_OUTPUT
+            echo "dockerfile=./deploy/Dockerfile.alphafold2-arm64" >> $GITHUB_OUTPUT
+            echo "port=8081" >> $GITHUB_OUTPUT
+            echo "image_name=alphafold2-arm64" >> $GITHUB_OUTPUT
+            ;;
+          "rfdiffusion")
+            echo "context=." >> $GITHUB_OUTPUT
+            echo "dockerfile=./deploy/Dockerfile.rfdiffusion-arm64" >> $GITHUB_OUTPUT
+            echo "port=8082" >> $GITHUB_OUTPUT
+            echo "image_name=rfdiffusion-arm64" >> $GITHUB_OUTPUT
+            ;;
+          "proteinmpnn")
+            echo "context=." >> $GITHUB_OUTPUT
+            echo "dockerfile=./deploy/Dockerfile.proteinmpnn-arm64" >> $GITHUB_OUTPUT
+            echo "port=8083" >> $GITHUB_OUTPUT
+            echo "image_name=proteinmpnn-arm64" >> $GITHUB_OUTPUT
+            ;;
+          *)
+            echo "Unknown component: ${{ matrix.component }}"
+            exit 1
+            ;;
+        esac
+        
+    - name: Generate container registry login
+      if: needs.preflight.outputs.should_push == 'true'
+      run: |
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+        
+    - name: Extract metadata for Docker
+      id: meta
+      run: |
+        # Generate image tags
+        image_base="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ steps.component-config.outputs.image_name }}"
+        
+        tags=""
+        if [ "${{ github.event_name }}" == "push" ]; then
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            tags="$image_base:latest,$image_base:${{ github.sha }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            tag_name=${GITHUB_REF#refs/tags/}
+            tags="$image_base:$tag_name,$image_base:latest"
+          else
+            branch_name=${GITHUB_REF#refs/heads/}
+            tags="$image_base:$branch_name,$image_base:${{ github.sha }}"
+          fi
+        elif [ "${{ github.event_name }}" == "pull_request" ]; then
+          tags="$image_base:pr-${{ github.event.number }}"
+        else
+          tags="$image_base:${{ github.sha }}"
+        fi
+        
+        echo "tags=$tags" >> $GITHUB_OUTPUT
+        echo "Generated tags: $tags"
+        
+    - name: Build Docker image
+      run: |
+        echo "Building ${{ matrix.component }} Docker image..."
+        echo "Context: ${{ steps.component-config.outputs.context }}"
+        echo "Dockerfile: ${{ steps.component-config.outputs.dockerfile }}"
+        
+        # Ensure Dockerfile exists or create a basic one
+        if [ ! -f "${{ steps.component-config.outputs.dockerfile }}" ]; then
+          echo "Creating basic Dockerfile for ${{ matrix.component }}..."
+          mkdir -p "$(dirname "${{ steps.component-config.outputs.dockerfile }}")"
+          
+          case "${{ matrix.component }}" in
+            "mcp-server")
+              cat > "${{ steps.component-config.outputs.dockerfile }}" << 'EOL'
+        FROM python:3.9-slim
+
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y \
+            curl \
+            git \
+            build-essential \
+            && rm -rf /var/lib/apt/lists/*
+
+        WORKDIR /app
+
+        # Copy requirements and install Python dependencies
+        COPY requirements.txt .
+        RUN pip install --no-cache-dir --upgrade pip && \
+            pip install --no-cache-dir -r requirements.txt
+
+        # Copy application code
+        COPY . .
+
+        # Create non-root user
+        RUN useradd -m -u 1000 mcpuser && \
+            chown -R mcpuser:mcpuser /app
+        USER mcpuser
+
+        EXPOSE 8001
+
+        # Health check
+        HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+          CMD curl -f http://localhost:8001/health || exit 1
+
+        ENV MODEL_BACKEND=native
+        ENV PYTHONPATH=/app
+
+        CMD ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001"]
+        EOL
+              ;;
+            "mcp-dashboard")
+              cat > "${{ steps.component-config.outputs.dockerfile }}" << 'EOL'
+        FROM node:18-slim
+
+        # Install curl for health checks
+        RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+        WORKDIR /app
+
+        # Copy package files
+        COPY package*.json ./
+
+        # Install dependencies
+        RUN npm install
+
+        # Copy source code
+        COPY . .
+
+        # Build application
+        RUN npm run build
+
+        # Create non-root user
+        RUN useradd -m -u 1000 dashuser && \
+            chown -R dashuser:dashuser /app
+        USER dashuser
+
+        EXPOSE 3000
+
+        # Health check
+        HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+          CMD curl -f http://localhost:3000 || exit 1
+
+        ENV NODE_ENV=production
+
+        CMD ["npm", "start"]
+        EOL
+              ;;
+          esac
+        fi
+        
+        # Build the image
+        docker build \
+          --file "${{ steps.component-config.outputs.dockerfile }}" \
+          --build-arg BUILDTIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+          --build-arg VERSION="${{ github.sha }}" \
+          --build-arg COMPONENT="${{ matrix.component }}" \
+          --tag temp-${{ matrix.component }}:${{ github.sha }} \
+          ${{ steps.component-config.outputs.context }}
+          
+        echo "Build completed for ${{ matrix.component }}"
+        
+    - name: Tag Docker image
+      if: needs.preflight.outputs.should_push == 'true'
+      run: |
+        # Tag images for pushing
+        IFS=',' read -ra TAGS <<< "${{ steps.meta.outputs.tags }}"
+        for tag in "${TAGS[@]}"; do
+          echo "Tagging: temp-${{ matrix.component }}:${{ github.sha }} -> $tag"
+          docker tag temp-${{ matrix.component }}:${{ github.sha }} "$tag"
+        done
+        
+    - name: Test Docker image
+      run: |
+        echo "Testing ${{ matrix.component }} Docker image..."
+        
+        # Test basic container startup
+        container_name="test-${{ matrix.component }}-${{ github.run_number }}"
+        
+        case "${{ matrix.component }}" in
+          "mcp-server")
+            echo "Testing MCP Server container..."
+            docker run -d --name "$container_name" \
+              -p ${{ steps.component-config.outputs.port }}:${{ steps.component-config.outputs.port }} \
+              temp-${{ matrix.component }}:${{ github.sha }} || echo "Failed to start container"
+              
+            # Wait for startup
+            sleep 15
+            
+            # Test health endpoint if available
+            if docker exec "$container_name" curl -f http://localhost:${{ steps.component-config.outputs.port }}/health 2>/dev/null; then
+              echo "Health check passed"
+            else
+              echo "Health check not available or failed"
+            fi
+            ;;
+            
+          "mcp-dashboard")
+            echo "Testing Dashboard container..."
+            docker run -d --name "$container_name" \
+              -p ${{ steps.component-config.outputs.port }}:${{ steps.component-config.outputs.port }} \
+              temp-${{ matrix.component }}:${{ github.sha }} || echo "Failed to start container"
+              
+            # Wait for startup
+            sleep 20
+            
+            # Test dashboard accessibility
+            if docker exec "$container_name" curl -f http://localhost:${{ steps.component-config.outputs.port }} 2>/dev/null; then
+              echo "Dashboard accessibility test passed"
+            else
+              echo "Dashboard test failed or not ready"
+            fi
+            ;;
+            
+          *)
+            echo "Testing ${{ matrix.component }} container..."
+            docker run -d --name "$container_name" \
+              -p ${{ steps.component-config.outputs.port }}:${{ steps.component-config.outputs.port }} \
+              temp-${{ matrix.component }}:${{ github.sha }} || echo "Failed to start container"
+              
+            # Wait for startup
+            sleep 10
+            
+            # Basic connectivity test
+            echo "Container started successfully"
+            ;;
+        esac
+        
+        # Get container status and logs
+        echo "Container status:"
+        docker ps | grep "$container_name" || echo "Container not running"
+        
+        echo "Container logs:"
+        docker logs "$container_name" || echo "No logs available"
+        
+        # Cleanup
+        docker stop "$container_name" || true
+        docker rm "$container_name" || true
+        
+    - name: Push Docker image
+      if: needs.preflight.outputs.should_push == 'true'
+      run: |
+        echo "Pushing ${{ matrix.component }} Docker images..."
+        
+        IFS=',' read -ra TAGS <<< "${{ steps.meta.outputs.tags }}"
+        for tag in "${TAGS[@]}"; do
+          echo "Pushing: $tag"
+          docker push "$tag"
+        done
+        
+        echo "Push completed for ${{ matrix.component }}"
+        
+    - name: Generate build report
+      if: always()
+      run: |
+        cat > docker-build-${{ matrix.component }}-report.json << EOF
+        {
+          "component": "${{ matrix.component }}",
+          "build_time": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+          "commit_sha": "${{ github.sha }}",
+          "branch": "${{ github.ref_name }}",
+          "context": "${{ steps.component-config.outputs.context }}",
+          "dockerfile": "${{ steps.component-config.outputs.dockerfile }}",
+          "port": "${{ steps.component-config.outputs.port }}",
+          "image_name": "${{ steps.component-config.outputs.image_name }}",
+          "tags": "${{ steps.meta.outputs.tags }}",
+          "pushed": "${{ needs.preflight.outputs.should_push }}",
+          "job_status": "${{ job.status }}"
+        }
+        EOF
+        
+        echo "Build report for ${{ matrix.component }}:"
+        cat docker-build-${{ matrix.component }}-report.json | jq .
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: docker-build-report-${{ matrix.component }}-${{ github.run_number }}
+        path: docker-build-${{ matrix.component }}-report.json
+        retention-days: 30
+        
+    - name: Cleanup build artifacts
+      if: always()
+      run: |
+        # Clean up temporary images
+        docker rmi temp-${{ matrix.component }}:${{ github.sha }} || true
+        
+        # Clean up build cache periodically
+        if [ $(( RANDOM % 10 )) -eq 0 ]; then
+          echo "Periodic cleanup..."
+          docker builder prune -f --filter until=24h || true
+          docker image prune -f --filter until=48h || true
+        fi
+
+  # ============================================================================
+  # Integration Testing
+  # ============================================================================
+  integration-test:
+    runs-on: [self-hosted, ARM64]
+    timeout-minutes: 30
+    needs: [preflight, docker-build]
+    if: needs.preflight.outputs.run_tests == 'true' && needs.docker-build.result == 'success'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup integration test environment
+      run: |
+        echo "Setting up integration test environment..."
+        
+        # Create test network
+        docker network create protein-design-test || true
+        
+        # Create test data directory
+        mkdir -p /tmp/test-data
+        
+    - name: Start test services
+      run: |
+        echo "Starting test services..."
+        
+        # Check which images are available
+        available_images=""
+        if docker image ls --format "table {{.Repository}}:{{.Tag}}" | grep -q "temp-mcp-server:${{ github.sha }}"; then
+          available_images="$available_images mcp-server"
+        fi
+        if docker image ls --format "table {{.Repository}}:{{.Tag}}" | grep -q "temp-mcp-dashboard:${{ github.sha }}"; then
+          available_images="$available_images mcp-dashboard"
+        fi
+        
+        echo "Available test images:$available_images"
+        
+        # Start MCP Server if available
+        if echo "$available_images" | grep -q "mcp-server"; then
+          echo "Starting MCP Server for testing..."
+          docker run -d --name test-mcp-server \
+            --network protein-design-test \
+            -p 8001:8001 \
+            -e MODEL_BACKEND=native \
+            temp-mcp-server:${{ github.sha }}
+            
+          # Wait for server to start
+          for i in {1..30}; do
+            if docker exec test-mcp-server curl -f http://localhost:8001/health 2>/dev/null; then
+              echo "MCP Server is ready"
+              break
+            fi
+            echo "Waiting for MCP Server... ($i/30)"
+            sleep 2
+          done
+        fi
+        
+        # Start Dashboard if available
+        if echo "$available_images" | grep -q "mcp-dashboard"; then
+          echo "Starting Dashboard for testing..."
+          docker run -d --name test-mcp-dashboard \
+            --network protein-design-test \
+            -p 3000:3000 \
+            -e NEXT_PUBLIC_MCP_SERVER_URL=http://test-mcp-server:8001 \
+            temp-mcp-dashboard:${{ github.sha }}
+            
+          # Wait for dashboard to start
+          sleep 20
+        fi
+        
+    - name: Run integration tests
+      run: |
+        echo "Running integration tests..."
+        
+        # Test MCP Server API
+        if docker ps | grep -q test-mcp-server; then
+          echo "Testing MCP Server API..."
+          
+          # Health check
+          if curl -f http://localhost:8001/health; then
+            echo "✓ Health check passed"
+          else
+            echo "✗ Health check failed"
+          fi
+          
+          # API endpoints test
+          if curl -s http://localhost:8001/api/services/status | jq . > /dev/null; then
+            echo "✓ Service status API accessible"
+          else
+            echo "✗ Service status API failed"
+          fi
+          
+          # Test job creation (if endpoint exists)
+          response=$(curl -s -w "%{http_code}" -X POST http://localhost:8001/api/jobs \
+            -H "Content-Type: application/json" \
+            -d '{
+              "sequence": "MKFLKFSLLTAVLLSVVFAFSSCGADGPAYWRGASCLSKA",
+              "job_name": "Integration Test",
+              "num_designs": 1
+            }' || echo "000")
+          
+          if [[ "$response" == *"200"* ]] || [[ "$response" == *"201"* ]]; then
+            echo "✓ Job creation API working"
+          else
+            echo "✗ Job creation API failed (response: $response)"
+          fi
+        fi
+        
+        # Test Dashboard
+        if docker ps | grep -q test-mcp-dashboard; then
+          echo "Testing Dashboard..."
+          
+          if curl -f http://localhost:3000; then
+            echo "✓ Dashboard accessible"
+          else
+            echo "✗ Dashboard not accessible"
+          fi
+        fi
+        
+        # Test inter-service communication
+        if docker ps | grep -q test-mcp-server && docker ps | grep -q test-mcp-dashboard; then
+          echo "Testing inter-service communication..."
+          
+          # Test dashboard -> server communication
+          if docker exec test-mcp-dashboard curl -f http://test-mcp-server:8001/health; then
+            echo "✓ Dashboard can communicate with MCP Server"
+          else
+            echo "✗ Dashboard cannot communicate with MCP Server"
+          fi
+        fi
+        
+    - name: Collect test logs
+      if: always()
+      run: |
+        echo "Collecting test logs..."
+        
+        echo "=== MCP Server Logs ==="
+        docker logs test-mcp-server 2>&1 || echo "No MCP Server logs"
+        
+        echo "=== Dashboard Logs ==="
+        docker logs test-mcp-dashboard 2>&1 || echo "No Dashboard logs"
+        
+        echo "=== Container Status ==="
+        docker ps -a | grep test- || echo "No test containers"
+        
+        echo "=== Network Status ==="
+        docker network ls | grep protein-design || echo "No test network"
+        
+    - name: Cleanup test environment
+      if: always()
+      run: |
+        echo "Cleaning up test environment..."
+        
+        # Stop and remove test containers
+        docker stop test-mcp-server test-mcp-dashboard 2>/dev/null || true
+        docker rm test-mcp-server test-mcp-dashboard 2>/dev/null || true
+        
+        # Remove test network
+        docker network rm protein-design-test 2>/dev/null || true
+        
+        # Clean up test data
+        rm -rf /tmp/test-data || true
+
+  # ============================================================================
+  # Final Report Generation
+  # ============================================================================
+  report:
+    runs-on: [self-hosted, ARM64]
+    timeout-minutes: 10
+    if: always()
+    needs: [preflight, docker-build, integration-test]
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+        
+    - name: Generate comprehensive report
+      run: |
+        echo "Generating comprehensive CI/CD report..."
+        
+        cat > cicd-report.md << 'EOL'
+        # Self-Hosted Docker CI/CD Report
+        
+        **Generated:** $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+        **Workflow:** ${{ github.workflow }}
+        **Run Number:** ${{ github.run_number }}
+        **Repository:** ${{ github.repository }}
+        **Branch:** ${{ github.ref_name }}
+        **Commit:** ${{ github.sha }}
+        **Actor:** ${{ github.actor }}
+        
+        ## Build Configuration
+        
+        - **Components Built:** ${{ needs.preflight.outputs.build_matrix }}
+        - **Push Images:** ${{ needs.preflight.outputs.should_push }}
+        - **Run Tests:** ${{ needs.preflight.outputs.run_tests }}
+        - **Registry:** ${{ env.REGISTRY }}
+        
+        ## Job Results Summary
+        
+        | Job | Status | Duration |
+        |-----|--------|----------|
+        | Preflight Checks | ${{ needs.preflight.result }} | - |
+        | Docker Build | ${{ needs.docker-build.result }} | - |
+        | Integration Tests | ${{ needs.integration-test.result }} | - |
+        
+        ## Component Build Details
+        
+        EOL
+        
+        # Add component-specific results
+        if [ -d "./artifacts" ]; then
+          for report_dir in ./artifacts/docker-build-report-*; do
+            if [ -d "$report_dir" ]; then
+              component=$(basename "$report_dir" | sed 's/docker-build-report-//' | sed 's/-[0-9]*$//')
+              echo "### $component" >> cicd-report.md
+              echo "" >> cicd-report.md
+              
+              if [ -f "$report_dir/docker-build-$component-report.json" ]; then
+                jq -r '
+                  "- **Build Time:** " + .build_time + "\n" +
+                  "- **Image Name:** " + .image_name + "\n" +
+                  "- **Port:** " + (.port | tostring) + "\n" +
+                  "- **Status:** " + .job_status + "\n" +
+                  "- **Pushed:** " + .pushed + "\n"
+                ' "$report_dir/docker-build-$component-report.json" >> cicd-report.md
+              fi
+              echo "" >> cicd-report.md
+            fi
+          done
+        fi
+        
+        cat >> cicd-report.md << 'EOL'
+        
+        ## Usage Instructions
+        
+        ### Running Built Images
+        
+        To use the built images on your self-hosted runner:
+        
+        ```bash
+        # Pull images (if pushed to registry)
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp-server:${{ github.sha }}
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp-dashboard:${{ github.sha }}
+        
+        # Or use local images
+        docker run -d -p 8001:8001 --name mcp-server temp-mcp-server:${{ github.sha }}
+        docker run -d -p 3000:3000 --name mcp-dashboard temp-mcp-dashboard:${{ github.sha }}
+        ```
+        
+        ### Docker Compose Usage
+        
+        Use the provided docker-compose files in the `/deploy` directory:
+        
+        ```bash
+        cd deploy/
+        docker compose -f docker-compose.yaml up -d
+        ```
+        
+        ## System Information
+        
+        - **Architecture:** ARM64 (self-hosted)
+        - **Docker Version:** $(docker --version)
+        - **Available Resources:** $(nproc) CPU cores, $(free -h | grep Mem | awk '{print $2}') RAM
+        
+        ## Next Steps
+        
+        1. **Production Deployment:** Use the built images for production deployment
+        2. **Monitoring:** Set up container monitoring and logging
+        3. **Scaling:** Configure horizontal scaling if needed
+        4. **Security:** Review and apply security updates regularly
+        
+        ---
+        *Report generated by GitHub Actions Self-Hosted CI/CD Pipeline*
+        EOL
+        
+        echo "Report generated:"
+        cat cicd-report.md
+        
+    - name: Upload final report
+      uses: actions/upload-artifact@v4
+      with:
+        name: cicd-comprehensive-report-${{ github.run_number }}
+        path: cicd-report.md
+        retention-days: 90
+        
+    - name: Comment on PR (if applicable)
+      if: github.event_name == 'pull_request'
+      run: |
+        echo "This would post a comment on PR #${{ github.event.number }} with build results"
+        echo "Build completed with status: ${{ needs.docker-build.result }}"

@@ -1,0 +1,48 @@
+# DGX Spark "control plane" stack: runs MCP Server + Dashboard only.
+#
+# Intended usage:
+# - Run model services (NIM or custom containers) locally or remotely.
+# - Configure their endpoints via the Dashboard (Settings) under External/NIM URLs.
+# - Optionally use embedded downloads to stage AlphaFold DBs locally (reduced first, full later).
+
+services:
+  mcp-server:
+    image: ${MCP_SERVER_IMAGE:-mcp-server:local}
+    build:
+      context: ..
+      dockerfile: mcp-server/Dockerfile
+    ports:
+      - "${MCP_SERVER_HOST_PORT:-8011}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Persist dashboard-editable config and embedded downloads.
+      - ./dgx-spark/mcp_config.json:/config/mcp_config.json:ro
+      - ${DGX_MODELS_DIR:-/data/mcp-models}:/models
+    environment:
+      - MCP_CONFIG_PATH=/config/mcp_config.json
+      # Prefer local inference if available.
+      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-embedded,external,nim}
+      # Enable non-blocking staged provisioning (downloads still require explicit URLs).
+      - MCP_EMBEDDED_AUTO_DOWNLOAD=${MCP_EMBEDDED_AUTO_DOWNLOAD:-1}
+      - MCP_BOOTSTRAP_ON_STARTUP=${MCP_BOOTSTRAP_ON_STARTUP:-1}
+      # Optional: you may set these here, or configure URLs from the dashboard.
+      # - ALPHAFOLD_DB_URL=
+      # - ALPHAFOLD_DB_URL_FULL=
+      # - RFDIFFUSION_WEIGHTS_URL=
+      # - PROTEINMPNN_WEIGHTS_URL=
+    restart: unless-stopped
+
+  mcp-dashboard:
+    image: ${MCP_DASHBOARD_IMAGE:-mcp-dashboard:local}
+    build:
+      context: ../mcp-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "${MCP_DASHBOARD_HOST_PORT:-3000}:3000"
+    environment:
+      - MCP_SERVER_URL=http://mcp-server:8000
+      - NEXT_PUBLIC_MCP_SERVER_URL=http://mcp-server:8000
+    depends_on:
+      - mcp-server
+

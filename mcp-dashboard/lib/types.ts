@@ -29,6 +29,10 @@ export interface ServiceStatus {
     status: string
     url: string
     error?: string
+    reason?: string
+    http_status?: number
+    backend?: string
+    selected_provider?: string
   }
 }
 
@@ -36,4 +40,12 @@ export interface ProteinSequenceInput {
   sequence: string
   job_name?: string
   num_designs: number
+}
+export interface AlphaFoldSettings {
+  speed_preset?: 'fast' | 'balanced' | 'quality'
+  disable_templates?: boolean
+  num_recycles?: number
+  num_ensemble?: number
+  mmseqs2_max_seqs?: number
+  msa_mode?: 'jackhmmer' | 'mmseqs2'
 }

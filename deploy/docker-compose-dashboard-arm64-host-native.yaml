@@ -1,0 +1,86 @@
+name: protein-binder-dashboard-arm64-host-native
+
+# ARM64 host-native stack (no CI shims):
+# - Runs MCP Server + Dashboard in containers
+# - Routes AlphaFold2 + RFdiffusion to host-native services (FastAPI wrappers)
+# - Keeps ProteinMPNN as a container for convenience
+#
+# Start:
+#   docker compose -f deploy/docker-compose-dashboard-arm64-host-native.yaml up -d --build
+#
+# Host-native services:
+#   # 1) Provision weights/DBs (writes tools/*/.env)
+#   ./scripts/provision_arm64_host_native_models.sh --db-tier reduced
+#
+#   # 2) Start the host-native HTTP wrappers (reads tools/*/.env automatically)
+#   ./scripts/run_arm64_native_model_services.sh
+
+services:
+  proteinmpnn:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.proteinmpnn-arm64
+    image: protein-binder/proteinmpnn:arm64-latest
+    ports:
+      - "${PROTEINMPNN_HOST_PORT:-18083}:8000"
+    volumes:
+      - ./outputs/proteinmpnn:/outputs
+      - mcp-models:/models
+    environment:
+      - MODEL_DIR=/models
+    restart: unless-stopped
+
+  mcp-server:
+    image: ${MCP_SERVER_IMAGE:-mcp-server:local}
+    build:
+      context: ../mcp-server
+      dockerfile: Dockerfile
+    network_mode: host
+    volumes:
+      - mcp-config:/config
+      - mcp-models:/models
+    environment:
+      - MCP_CONFIG_PATH=/config/mcp_config.json
+      - MCP_ROUTING_MODE=${MCP_ROUTING_MODE:-fallback}
+      - MCP_ROUTING_ORDER=${MCP_ROUTING_ORDER:-embedded,external,nim}
+
+      # AlphaFold CPU runs can take a long time; avoid premature httpx ReadTimeout.
+      - MCP_NIM_INFERENCE_TIMEOUT_S=${MCP_NIM_INFERENCE_TIMEOUT_S:-10800}
+
+      # Run MCP server on the expected host port when using host networking.
+      - PORT=${MCP_SERVER_HOST_PORT:-8011}
+
+      # Prefer local inference via the External provider (NIM-compatible wrappers).
+      - EXTERNAL_ALPHAFOLD_URL=${EXTERNAL_ALPHAFOLD_URL:-http://127.0.0.1:18081}
+      - EXTERNAL_RFDIFFUSION_URL=${EXTERNAL_RFDIFFUSION_URL:-http://127.0.0.1:18082}
+      - EXTERNAL_PROTEINMPNN_URL=${EXTERNAL_PROTEINMPNN_URL:-http://127.0.0.1:${PROTEINMPNN_HOST_PORT:-18083}}
+      - EXTERNAL_ALPHAFOLD_MULTIMER_URL=${EXTERNAL_ALPHAFOLD_MULTIMER_URL:-http://127.0.0.1:18084}
+
+      # Avoid implying NVIDIA NIM is required; users can still enable NIM by
+      # setting these env vars explicitly.
+      - ALPHAFOLD_URL=${ALPHAFOLD_URL:-disabled}
+      - RFDIFFUSION_URL=${RFDIFFUSION_URL:-disabled}
+      - PROTEINMPNN_URL=${PROTEINMPNN_URL:-disabled}
+      - ALPHAFOLD_MULTIMER_URL=${ALPHAFOLD_MULTIMER_URL:-disabled}
+
+      - MCP_EMBEDDED_AUTO_DOWNLOAD=${MCP_EMBEDDED_AUTO_DOWNLOAD:-1}
+      - MCP_BOOTSTRAP_ON_STARTUP=${MCP_BOOTSTRAP_ON_STARTUP:-1}
+    depends_on:
+      - proteinmpnn
+    restart: unless-stopped
+
+  mcp-dashboard:
+    image: ${MCP_DASHBOARD_IMAGE:-mcp-dashboard:local}
+    build:
+      context: ../mcp-dashboard
+      dockerfile: Dockerfile
+    network_mode: host
+    environment:
+      - MCP_SERVER_URL=http://127.0.0.1:${MCP_SERVER_HOST_PORT:-8011}
+      - NEXT_PUBLIC_MCP_SERVER_URL=http://127.0.0.1:${MCP_SERVER_HOST_PORT:-8011}
+    depends_on:
+      - mcp-server
+
+volumes:
+  mcp-config:
+  mcp-models:

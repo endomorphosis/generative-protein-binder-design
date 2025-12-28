@@ -28,7 +28,9 @@ The dashboard will be available at http://localhost:3000
 
 ## Environment Variables
 
-- `NEXT_PUBLIC_MCP_SERVER_URL` - MCP Server endpoint (default: http://localhost:8000)
+- `NEXT_PUBLIC_MCP_SERVER_URL` - MCP Server endpoint
+	- Local dev MCP server default: `http://localhost:8000`
+	- Full stack (via `./scripts/run_dashboard_stack.sh`) default: `http://localhost:${MCP_SERVER_HOST_PORT:-8011}`
 
 ## Technology Stack
 
@@ -43,6 +45,23 @@ The dashboard will be available at http://localhost:3000
 ```bash
 npm run build
 npm start
+```
+
+## E2E Tests (Playwright)
+
+```bash
+npm run test:e2e
+```
+
+By default the test runner starts the dashboard dev server on port `3100` to avoid collisions with any Docker container already using `3000`.
+
+- Override port: `E2E_PORT=3005 npm run test:e2e`
+- Reuse an existing server instead of starting one: `E2E_REUSE_SERVER=1 npm run test:e2e`
+
+To open the HTML report:
+
+```bash
+npx playwright show-report
 ```
 
 See [DOCKER_MCP_README.md](../docs/DOCKER_MCP_README.md) for more information.

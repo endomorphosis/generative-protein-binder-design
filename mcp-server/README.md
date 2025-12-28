@@ -21,9 +21,15 @@ pip install -r requirements.txt
 python server.py
 ```
 
-The server will be available at http://localhost:8000
+Local dev server:
 
-API documentation available at http://localhost:8000/docs
+- API: http://localhost:8000
+- Docs: http://localhost:8000/docs
+
+If you’re running the full stack via `./scripts/run_dashboard_stack.sh`, the MCP Server is typically exposed on the host at:
+
+- API: http://localhost:${MCP_SERVER_HOST_PORT:-8011}
+- Docs: http://localhost:${MCP_SERVER_HOST_PORT:-8011}/docs
 
 ## Environment Variables
 
@@ -35,3 +41,18 @@ API documentation available at http://localhost:8000/docs
 ## API Endpoints
 
 See [DOCKER_MCP_README.md](../docs/DOCKER_MCP_README.md) for detailed API documentation.
+
+### Job diagnostics query params
+
+`GET /api/jobs/{job_id}` supports:
+
+- `include_metrics=1`: include stage timing + best-effort metrics snapshots
+- `include_residency=1`: include page-cache residency sampling (slower)
+- `include_error_detail=1`: include full error detail (default responses keep errors UI-safe via summarization/truncation)
+
+### Handy scripts
+
+From repo root:
+
+- Submit a demo job: `./scripts/submit_demo_job.sh`
+- Monitor progress/liveness: `./scripts/monitor_job.sh <job_id> --metrics`

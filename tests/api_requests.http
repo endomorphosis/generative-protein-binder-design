@@ -1,0 +1,21 @@
+### MCP Server - Health
+GET {{MCP_BASE_URL}}/health
+
+### List MCP Tools
+GET {{MCP_BASE_URL}}/mcp/v1/tools
+
+### Create a sample job (adjust body as needed)
+POST {{MCP_BASE_URL}}/api/jobs
+Content-Type: application/json
+
+{
+  "toolId": "example-tool",
+  "input": { "sequence": "MKT..." },
+  "metadata": { "note": "sample job from REST Client" }
+}
+
+### Get jobs
+GET {{MCP_BASE_URL}}/api/jobs
+
+### Get a specific job (replace :id)
+GET {{MCP_BASE_URL}}/api/jobs/:id

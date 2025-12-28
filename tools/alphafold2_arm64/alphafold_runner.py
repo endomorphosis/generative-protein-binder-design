@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
+"""AlphaFold2 runner.
+
+This file was originally a lightweight stub that generated synthetic PDB output
+to keep the ARM64 stack bootable.
+
+Real AlphaFold2 execution requires a full AlphaFold install (Python deps +
+compiled tools + databases). The ARM64 Docker image in this repo is a
+lightweight API *shim*.
+
+Policy:
+- In CI (`CI=1`), it may return synthetic/mock structures.
+- In normal runtime, synthetic outputs are treated as failure.
 """
-AlphaFold2 Runner for Native DGX Spark Execution
-Runs AlphaFold2 structure prediction using GPU acceleration
-"""
+
+from __future__ import annotations
 
 import os
 import sys
@@ -13,6 +24,55 @@ from typing import Dict, Any
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def allow_mock_outputs() -> bool:
+    # Safety: mock outputs are for CI/testing only.
+    return _truthy_env("CI")
+
+
+def check_models_available() -> bool:
+    """Best-effort check for AlphaFold parameter files.
+
+    NOTE: Presence of params alone is NOT sufficient for real AlphaFold2 runs
+    (databases + toolchain are also required). This is mainly useful for CI and
+    future real implementations.
+    """
+    model_dir = os.getenv("ALPHAFOLD_DATA_DIR", "/models/alphafold")
+
+    params_dir = os.path.join(model_dir, "params")
+    if not os.path.isdir(params_dir):
+        return False
+
+    required_models = [
+        "params_model_1_ptm.npz",
+        "params_model_2_ptm.npz",
+        "params_model_3_ptm.npz",
+        "params_model_4_ptm.npz",
+        "params_model_5_ptm.npz",
+    ]
+
+    for model_file in required_models:
+        model_path = os.path.join(params_dir, model_file)
+        if os.path.isfile(model_path) and os.path.getsize(model_path) > 1024:
+            logger.info(f"Found AlphaFold2 model params: {model_path}")
+            return True
+
+    return False
+
+
+def is_ready() -> bool:
+    # This ARM64 container is a shim; only CI should treat it as "ready".
+    if allow_mock_outputs():
+        logger.info("CI enabled - AlphaFold2 shim ready (mock outputs)")
+        return True
+
+    logger.warning("AlphaFold2 ARM64 shim is not a real AlphaFold2 implementation")
+    return False
 
 def predict_structure(fasta_file: str, output_dir: str) -> str:
     """
@@ -25,6 +85,14 @@ def predict_structure(fasta_file: str, output_dir: str) -> str:
     Returns:
         Path to output PDB file
     """
+    if not is_ready():
+        raise RuntimeError(
+            "AlphaFold2 real execution is not available in this ARM64 container. "
+            "This image is a CI-only shim and will not emit synthetic structures in runtime. "
+            "Configure a real AlphaFold2 provider via the MCP Dashboard (External/NIM), "
+            "or deploy a native AlphaFold2 install on the host and route to it."
+        )
+
     try:
         # Import required libraries
         import jax
@@ -73,8 +141,7 @@ def predict_structure(fasta_file: str, output_dir: str) -> str:
         
         logger.info(f"Sequence length: {len(sequence)}")
         
-        # For now, create a simple structure prediction simulation
-        # In a full implementation, this would use the actual AlphaFold2 model
+        # CI-only: generate synthetic structure.
         
         # Generate mock PDB structure with realistic coordinates
         pdb_content = generate_structure_prediction(sequence, gpu_used)
@@ -89,11 +156,13 @@ def predict_structure(fasta_file: str, output_dir: str) -> str:
         
     except Exception as e:
         logger.error(f"AlphaFold2 prediction failed: {e}")
-        # Create a fallback structure
-        output_pdb = os.path.join(output_dir, "result.pdb")
-        with open(output_pdb, 'w') as f:
-            f.write(generate_fallback_structure(sequence if 'sequence' in locals() else "MKFLKFSLLTAVLLSVVFAFSSCG"))
-        return output_pdb
+        if allow_mock_outputs():
+            # Create a fallback structure (CI-only)
+            output_pdb = os.path.join(output_dir, "result.pdb")
+            with open(output_pdb, 'w') as f:
+                f.write(generate_fallback_structure(sequence if 'sequence' in locals() else "MKFLKFSLLTAVLLSVVFAFSSCG"))
+            return output_pdb
+        raise
 
 def generate_structure_prediction(sequence: str, gpu_used: bool = False) -> str:
     """Generate a realistic PDB structure for the given sequence"""

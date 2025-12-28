@@ -4,6 +4,22 @@
 
 This guide provides detailed instructions for installing AlphaFold2, RFDiffusion, and ProteinMPNN natively on ARM64 systems. This approach avoids Docker container platform compatibility issues but requires significant technical expertise and time investment.
 
+## NIM-Compatible Local Services (Recommended integration)
+
+If you want the Docker dashboard/MCP server stack to route to your **host-native** AlphaFold2 + RFdiffusion installs (no shims), this repo includes small NIM-compatible HTTP wrappers.
+
+- Start the host-native services:
+    - `./scripts/run_arm64_native_model_services.sh`
+    - This runs `native_services.alphafold_service` on `:18081` and `native_services.rfdiffusion_service` on `:18082`.
+    - You must set:
+        - `ALPHAFOLD_NATIVE_CMD` (must produce `{out_dir}/result.pdb`)
+        - `RFDIFFUSION_NATIVE_CMD` (must produce `{out_dir}/design_{design_id}.pdb`)
+
+- Start the dashboard stack that routes to those host-native services:
+    - `./scripts/run_dashboard_stack.sh --arm64-host-native up -d --build`
+
+This mode removes the “CI-only shim” containers from the critical path by pointing the MCP server at your real local installs via `http://host.docker.internal:18081` and `:18082`.
+
 ⚠️ **Warning:** Native installation is complex and may take several days to complete. It requires:
 - Deep understanding of Python environments and dependency management
 - Experience compiling software from source
@@ -675,6 +691,33 @@ Cache computed results to avoid recomputation:
 ```bash
 export ALPHAFOLD_CACHE_DIR=~/.cache/alphafold
 mkdir -p $ALPHAFOLD_CACHE_DIR
+```
+
+#### Optional: Pre-warm AlphaFold DBs in RAM (Evictable)
+
+On Linux, large read-heavy databases benefit from the kernel page cache.
+You can pre-warm the key AlphaFold DB files so the first run after boot is faster.
+
+This does **not** lock/pin memory; the cache is automatically evicted under memory pressure.
+
+```bash
+bash scripts/warm_alphafold_page_cache.sh --data-dir ~/.cache/alphafold --min-mem-gb 6
+```
+
+If you want extra protection against transient memory spikes, enabling swap (or zram-backed swap) is a good mitigation.
+
+#### Continuous Memory Safety (Recommended for Non-Technical Users)
+
+When using the ARM64 host-native mode, `scripts/start_everything.sh` starts a small background watchdog that:
+
+- Monitors `MemAvailable` continuously.
+- Under memory pressure, evicts AlphaFold DB file pages from the Linux page cache (best-effort).
+- Does **not** lock memory and does **not** drop global caches.
+
+You can also run a read-only report to help users understand what they are seeing:
+
+```bash
+bash scripts/check_memory_safety.sh
 ```
 
 ## Validation and Testing

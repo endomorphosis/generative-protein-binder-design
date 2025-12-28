@@ -7,41 +7,46 @@ This document describes the file organization structure for the generative-prote
 ```
 generative-protein-binder-design/
 ├── README.md                    # Main project documentation
-├── LICENSE                       # Apache 2.0 license
+├── LICENSE                      # MIT license
 ├── CODE_OF_CONDUCT.md           # Community guidelines
-├── SECURITY.md                   # Security policies
-├── requirements.txt              # Python dependencies
-├── .gitignore                    # Git ignore patterns
+├── SECURITY.md                  # Security policies
+├── requirements.txt             # Python dependencies
+├── .gitignore                   # Git ignore patterns
+├── .pre-commit-config.yaml      # Pre-commit hooks
+├── .workflow-trigger            # CI/CD trigger (ARM64 workflows)
 ├── docs/                         # All documentation files
-│   ├── ARM64_*.md                # ARM64-specific guides (18 files)
-│   ├── LOCAL_SETUP.md            # Local development setup
-│   ├── SYSTEM_VERIFICATION.md    # System compatibility check
-│   ├── GITHUB_ACTIONS_COMPLETE.md
-│   ├── RUNNER_TEST.md
-│   ├── WORKFLOW_TRIGGER_TEST.md
+│   ├── ARM64_*.md                # ARM64-specific guides
+│   ├── ALPHAFOLD_*.md            # AlphaFold optimization docs
+│   ├── MMSEQS2_*.md              # MMseqs2 integration docs
+│   ├── IMPLEMENTATION_*.md       # Implementation reports
+│   ├── TESTING_SUMMARY.txt       # Testing summaries
 │   ├── FILE_ORGANIZATION.md      # This file
-│   └── Protein_Design_Architecture_Diagram.png
-├── scripts/                      # All shell scripts
-│   ├── detect_platform.sh        # Platform detection
-│   ├── setup_local.sh            # Local setup automation
-│   ├── setup_github_runner.sh    # GitHub runner setup
-│   ├── check_runner_status.sh    # Runner status check
-│   ├── verify_arm64_port.sh      # ARM64 verification
-│   ├── continue_arm64_port.sh    # ARM64 porting helper
-│   ├── trigger_*.sh              # Workflow triggers
-│   ├── print_env.sh              # Environment info
-│   └── [ARM64 installation scripts]
-├── tests/                        # Test files
-│   ├── README.md                 # Test documentation
-│   ├── test_attention_solutions.py
-│   └── test_flash_attention_working.py
+│   └── images/, demos/           # Assets and example scripts
+├── scripts/                      # All shell scripts and installers
+│   ├── run_dashboard_stack.sh    # Start/stop Dashboard + MCP stack
+│   ├── submit_demo_job.sh        # Submit demo job to MCP
+│   ├── doctor_stack.sh           # Health/diagnostics
+│   ├── install_all_native.sh     # Zero-touch native installer (AlphaFold + MMseqs2)
+│   ├── convert_alphafold_db_to_mmseqs2_multistage.sh # MMseqs2 converter
+│   ├── install_mmseqs2.sh        # MMseqs2 binary installer
+│   ├── test_mmseqs2_installer_integration.sh # Installer verification
+│   └── [other utility scripts]
+├── tests/                        # Test files and resources
+│   ├── api_requests.http         # API sample calls (renamed from requests.http)
+│   ├── test_mcp_tools.py
+│   ├── test_mcp_validation.py
+│   ├── test_vscode_integration.py
+│   ├── test-cicd.sh
+│   ├── bench_mmseqs2_lookup.sh
+│   └── [other tests]
 ├── src/                          # Source code
-│   ├── protein-binder-design.ipynb
-│   └── arm64_cuda_fallback/
-├── deploy/                       # Deployment configurations
-├── tools/                        # External tools
+├── deploy/                       # Deployment configurations (compose, Helm)
+├── tools/                        # External tools (alphafold2, rfdiffusion, proteinmpnn)
+├── mcp-server/                   # MCP server implementation
+├── mcp-dashboard/                # Dashboard frontend
+├── mcp-dashboard-real/           # Legacy/alt dashboard
 ├── .github/                      # GitHub workflows and templates
-└── [Helm charts and other directories]
+└── user-container/, outputs/, benchmarks/  # Supporting assets
 ```
 
 ## Rationale

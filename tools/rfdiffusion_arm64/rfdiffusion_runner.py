@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
+"""RFDiffusion runner.
+
+This file was originally a lightweight stub that generated synthetic binder PDB
+output to keep the ARM64 stack bootable.
+
+Real RFDiffusion execution requires installing RFdiffusion + weights.
+The ARM64 Docker image in this repo is a lightweight API *shim*.
+
+Policy:
+- In CI (`CI=1`), it may return synthetic/mock designs.
+- In normal runtime, synthetic outputs are treated as failure.
 """
-RFDiffusion Runner for Native DGX Spark Execution
-Runs RFDiffusion binder design using GPU acceleration
-"""
+
+from __future__ import annotations
 
 import os
 import sys
@@ -16,6 +26,46 @@ from typing import Dict, Any
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def allow_mock_outputs() -> bool:
+    # Safety: mock outputs are for CI/testing only.
+    return _truthy_env("CI")
+
+
+def check_models_available() -> bool:
+    """Check if RFDiffusion model files are available"""
+    model_dir = os.getenv("RFDIFFUSION_MODEL_DIR", "/models/rfdiffusion")
+    
+    # Check for required model files (checking multiple possible names)
+    required_models = [
+        "Base_epoch8_ckpt.pt",
+        "Base_ckpt.pt",
+        "Complex_base_ckpt.pt",
+        "Complex_beta_ckpt.pt"
+    ]
+    
+    for model_file in required_models:
+        model_path = os.path.join(model_dir, model_file)
+        if os.path.isfile(model_path) and os.path.getsize(model_path) > 1024:
+            logger.info(f"Found RFDiffusion model: {model_path}")
+            return True  # At least one model is available
+    
+    return False
+
+
+def is_ready() -> bool:
+    # This ARM64 container is a shim; only CI should treat it as "ready".
+    if allow_mock_outputs():
+        logger.info("CI enabled - RFDiffusion shim ready (mock outputs)")
+        return True
+
+    logger.warning("RFDiffusion ARM64 shim is not a real RFdiffusion implementation")
+    return False
+
 def design_binder(target_pdb_file: str, output_dir: str, design_id: int = 0) -> str:
     """
     Run RFDiffusion binder design
@@ -28,6 +78,14 @@ def design_binder(target_pdb_file: str, output_dir: str, design_id: int = 0) -> 
     Returns:
         Path to output binder PDB file
     """
+    if not is_ready():
+        raise RuntimeError(
+            "RFDiffusion real execution is not available in this ARM64 container. "
+            "This image is a CI-only shim and will not emit synthetic designs in runtime. "
+            "Configure a real RFDiffusion provider via the MCP Dashboard (External/NIM), "
+            "or deploy a native RFdiffusion install on the host and route to it."
+        )
+
     try:
         # Import required libraries
         import torch
@@ -65,7 +123,7 @@ def design_binder(target_pdb_file: str, output_dir: str, design_id: int = 0) -> 
         else:
             logger.info("Using CPU for computation")
         
-        logger.info(f"Running RFDiffusion binder design for {target_pdb_file}, design {design_id}")
+        logger.info(f"(CI) Running synthetic RFDiffusion binder design for {target_pdb_file}, design {design_id}")
         
         # Read target structure
         with open(target_pdb_file, 'r') as f:
@@ -88,11 +146,13 @@ def design_binder(target_pdb_file: str, output_dir: str, design_id: int = 0) -> 
         
     except Exception as e:
         logger.error(f"RFDiffusion design failed: {e}")
-        # Create a fallback binder
-        output_pdb = os.path.join(output_dir, f"design_{design_id}.pdb")
-        with open(output_pdb, 'w') as f:
-            f.write(generate_fallback_binder(design_id))
-        return output_pdb
+        if allow_mock_outputs():
+            # Create a fallback binder (CI-only)
+            output_pdb = os.path.join(output_dir, f"design_{design_id}.pdb")
+            with open(output_pdb, 'w') as f:
+                f.write(generate_fallback_binder(design_id))
+            return output_pdb
+        raise
 
 def extract_sequence_from_pdb(pdb_content: str) -> str:
     """Extract amino acid sequence from PDB content"""

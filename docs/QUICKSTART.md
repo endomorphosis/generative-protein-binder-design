@@ -20,77 +20,40 @@ python3 -m pip install -r requirements.txt
 python3 server.py &
 
 # In another terminal, start the Dashboard
-cd mcp-dashboard
-npm install
-npm run dev
+## Prerequisites
+
+- Docker and Docker Compose
+- NVIDIA GPU + nvidia-container-toolkit (for accelerated services)
+- (Optional) NGC API key if you use NIM images
+
+## Option 1: Fastest (Docker stack, recommended)
+
+One command to start MCP Server + Dashboard with the correct compose file auto-selected (ARM64/AMD64):
+
+```bash
+./scripts/run_dashboard_stack.sh up -d --build
 ```
 
 Access:
-- Dashboard: http://localhost:3000
-- MCP Server API: http://localhost:8000/docs
+- Dashboard: http://localhost:${MCP_DASHBOARD_HOST_PORT:-3000}
+- MCP Server API: http://localhost:${MCP_SERVER_HOST_PORT:-8011}/health
 
-## Option 2: Full Stack with Docker Compose
-
-To run the complete stack including NIM services, MCP server, dashboard, and Jupyter:
-
-### 1. Set up environment variables
-
+Submit a demo job:
 ```bash
-export NGC_CLI_API_KEY=<your-ngc-api-key>
-export HOST_NIM_CACHE=~/.cache/nim
-mkdir -p ~/.cache/nim
-chmod -R 777 ~/.cache/nim
+./scripts/submit_demo_job.sh
 ```
 
-### 2. Start all services
-
+Check health quickly:
 ```bash
-docker compose -f ../deploy/docker-compose-full.yaml up
+./scripts/doctor_stack.sh
 ```
 
-This will start:
-- AlphaFold2 (port 8081)
-- RFDiffusion (port 8082)
-- ProteinMPNN (port 8083)
-- AlphaFold2-Multimer (port 8084)
-- MCP Server (port 8000)
-- MCP Dashboard (port 3000)
-- Jupyter Notebook (port 8888)
+## Option 2: Zero-Touch Native Install (AlphaFold + MMseqs2)
 
-**Note**: First run will download ~1.3TB of model data and may take several hours.
+Install native toolchain and build MMseqs2 databases automatically to `~/.cache/alphafold/mmseqs2`:
 
-### 3. Access the services
-
-- **MCP Dashboard**: http://localhost:3000
-  - Submit new design jobs
-  - Monitor job progress
-  - View and download results
-  
-- **MCP Server API Documentation**: http://localhost:8000/docs
-  - Interactive API documentation
-  - Test endpoints directly
-  
-- **Jupyter Notebook**: http://localhost:8888
-  - Interactive notebook environment
-  - Example notebook available
-
-## Using the Dashboard
-
-1. **Check Service Status**: The top of the dashboard shows the status of all NIM services
-
-2. **Submit a New Job**:
-   - Enter a protein sequence (e.g., `MKFLKFSLLTAVLLSVVFAFSSCG`)
-   - Optionally provide a job name
-   - Set the number of designs (1-20)
-   - Click "Start Design Job"
-
-3. **Monitor Progress**:
-   - Jobs appear in the middle panel
-   - Click on a job to view details
-   - Progress updates automatically every 5 seconds
-
-4. **View Results**:
-   - Completed jobs show results in the right panel
+```bash
+# Minimal DBs (fastest)
    - View target structure and generated designs
    - Download results as JSON
 
@@ -99,6 +62,12 @@ This will start:
    - Explore the example notebook
 
 ## Using the MCP Server API
+
+Notes:
+- GPU indexing auto-detected; falls back to CPU.
+- Already-built tiers are skipped; remove `~/.cache/alphafold/mmseqs2` to force rebuild.
+
+## Using the Dashboard
 
 ### Create a job
 ```bash
@@ -154,9 +123,10 @@ Run the included test script to verify everything is working:
 
 ## Next Steps
 
-- Read the [full documentation](DOCKER_MCP_README.md)
+- Read the [Docker MCP guide](DOCKER_MCP_README.md)
 - Explore the [example notebook](../src/protein-binder-design.ipynb)
-- Check out the [MCP Server API docs](http://localhost:8000/docs)
+- Check the [MCP Server API docs](http://localhost:8000/docs)
+- Review [MMseqs2 installer integration](MMSEQS2_INSTALLER_INTEGRATION.md)
 
 ## Architecture
 

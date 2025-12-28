@@ -1,60 +1,175 @@
 #!/usr/bin/env python3
-"""
-ProteinMPNN Runner for Native DGX Spark Execution
-Runs ProteinMPNN sequence design using GPU acceleration
+"""ProteinMPNN runner.
+
+This module originally shipped as a lightweight mock/fallback to keep the ARM64
+stack bootable. For real-weight execution, we now try to run the actual
+ProteinMPNN code (if present) and only allow mock outputs when explicitly
+enabled (or in CI).
 """
 
+from __future__ import annotations
+
+import logging
 import os
+import random
+import subprocess
 import sys
 import tempfile
-import logging
-import random
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-# Configure logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def generate_sequence(backbone_pdb_file: str) -> str:
-    """
-    Run ProteinMPNN sequence generation
-    
-    Args:
-        backbone_pdb_file: Path to backbone PDB structure
-        
-    Returns:
-        Generated amino acid sequence
-    """
+
+def _truthy_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def allow_mock_outputs() -> bool:
+    # Safety: mock outputs are for CI/testing only.
+    return _truthy_env("CI")
+
+
+def proteinmpnn_home() -> Optional[Path]:
+    # Allow container or host to override where ProteinMPNN is located.
+    env = (os.getenv("PROTEINMPNN_HOME") or "").strip()
+    if env:
+        p = Path(env)
+        return p if p.exists() else None
+
+    # Common layouts:
+    # - copied into container at /app/ProteinMPNN
+    # - repo workspace at tools/proteinmpnn/ProteinMPNN
+    candidates = [Path("/app/ProteinMPNN"), Path(__file__).resolve().parents[2] / "tools" / "proteinmpnn" / "ProteinMPNN"]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
+def is_ready() -> bool:
+    home = proteinmpnn_home()
+    if not home:
+        return False
+
+    script = home / "protein_mpnn_run.py"
+    if not script.exists():
+        return False
+
+    weights = home / "vanilla_model_weights" / "v_48_020.pt"
+    if not weights.exists():
+        # Weights may differ, but absence usually means install incomplete.
+        return False
+
     try:
-        # Import required libraries
-        import torch
-        import numpy as np
-        
-        logger.info(f"PyTorch version: {torch.__version__}")
-        logger.info(f"CUDA available: {torch.cuda.is_available()}")
-        if torch.cuda.is_available():
-            logger.info(f"CUDA devices: {torch.cuda.device_count()}")
-        
-        logger.info(f"Running ProteinMPNN sequence generation for {backbone_pdb_file}")
-        
-        # Read backbone structure
-        with open(backbone_pdb_file, 'r') as f:
-            backbone_pdb = f.read()
-        
-        # Extract backbone information
-        backbone_info = parse_backbone_structure(backbone_pdb)
-        logger.info(f"Backbone length: {backbone_info['length']} residues")
-        
-        # Generate sequence using MPNN-inspired logic
-        sequence = generate_mpnn_sequence(backbone_info)
-        
-        logger.info(f"Generated sequence: {sequence}")
-        return sequence
-        
-    except Exception as e:
-        logger.error(f"ProteinMPNN sequence generation failed: {e}")
-        # Create a fallback sequence
-        return generate_fallback_sequence()
+        import torch  # noqa: F401
+        import numpy  # noqa: F401
+    except Exception:
+        return False
+
+    return True
+
+
+def _parse_fasta_alignment_file(path: Path) -> List[Tuple[str, str]]:
+    records: List[Tuple[str, str]] = []
+    header: Optional[str] = None
+    seq_lines: List[str] = []
+
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            if header is not None:
+                records.append((header, "".join(seq_lines)))
+            header = line[1:].strip()
+            seq_lines = []
+        else:
+            seq_lines.append(line)
+
+    if header is not None:
+        records.append((header, "".join(seq_lines)))
+    return records
+
+
+def _pick_designed_sequence(records: List[Tuple[str, str]]) -> Optional[str]:
+    # Prefer sampled sequences (usually marked with T=...)
+    for header, seq in records:
+        if "T=" in header:
+            return seq
+    if records:
+        return records[-1][1]
+    return None
+
+
+def generate_sequence(backbone_pdb_file: str) -> str:
+    """Generate a sequence for a backbone PDB.
+
+    In real mode, this runs ProteinMPNN and parses its output FASTA.
+    In mock mode, returns a deterministic fallback.
+    """
+    if not is_ready():
+        if allow_mock_outputs():
+            logger.warning("ProteinMPNN real dependencies not available; returning mock sequence (CI enabled)")
+            return generate_fallback_sequence()
+        raise RuntimeError(
+            "ProteinMPNN real execution is not available in this environment. "
+            "Install ProteinMPNN + weights and required deps (torch, numpy). (Mock outputs are CI-only.)"
+        )
+
+    home = proteinmpnn_home()
+    assert home is not None
+
+    with tempfile.TemporaryDirectory(prefix="proteinmpnn_real_") as tmpdir:
+        out_dir = Path(tmpdir)
+        cmd = [
+            sys.executable,
+            str(home / "protein_mpnn_run.py"),
+            "--pdb_path",
+            backbone_pdb_file,
+            "--out_folder",
+            str(out_dir),
+            "--num_seq_per_target",
+            "1",
+            "--batch_size",
+            "1",
+            "--sampling_temp",
+            os.getenv("PROTEINMPNN_SAMPLING_TEMP", "0.1"),
+            "--seed",
+            os.getenv("PROTEINMPNN_SEED", "1"),
+            "--model_name",
+            os.getenv("PROTEINMPNN_MODEL_NAME", "v_48_020"),
+            "--suppress_print",
+            "1",
+        ]
+
+        logger.info("Running ProteinMPNN: %s", " ".join(cmd))
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            logger.error("ProteinMPNN stderr: %s", proc.stderr)
+            raise RuntimeError(f"ProteinMPNN execution failed (exit {proc.returncode}).")
+
+        seqs_dir = out_dir / "seqs"
+        if not seqs_dir.exists():
+            raise RuntimeError("ProteinMPNN did not produce a seqs/ output directory.")
+
+        fasta_files = sorted(seqs_dir.glob("*.fa"))
+        if not fasta_files:
+            raise RuntimeError("ProteinMPNN did not produce any .fa outputs.")
+
+        records = _parse_fasta_alignment_file(fasta_files[0])
+        seq = _pick_designed_sequence(records)
+        if not seq:
+            raise RuntimeError("Failed to parse designed sequence from ProteinMPNN output.")
+
+        # ProteinMPNN may use '/' between chains and wrap sequences; MCP expects a flat sequence.
+        allowed = set("ACDEFGHIKLMNPQRSTVWYX")
+        cleaned = "".join([c for c in seq.replace("/", "").upper() if c in allowed])
+        if not cleaned:
+            raise RuntimeError("ProteinMPNN returned an empty/invalid sequence after cleaning")
+        return cleaned
 
 def parse_backbone_structure(pdb_content: str) -> Dict[str, Any]:
     """Parse backbone structure from PDB content"""

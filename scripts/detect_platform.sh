@@ -102,7 +102,7 @@ case "$ARCH" in
         echo "2. ${YELLOW}Docker with Emulation (Fallback)${NC}"
         echo "   Run AMD64 containers with emulation:"
         echo "   → Ensure QEMU emulation is set up"
-        echo "   → Use: docker compose -f deploy/docker-compose.yaml up"
+        echo "   → Use: ./scripts/run_dashboard_stack.sh --emulated up -d"
         echo "   → Note: Expect slower performance"
         echo
         echo "3. ${BLUE}Hybrid Approach${NC}"
@@ -134,7 +134,7 @@ case "$ARCH" in
         echo
         echo "1. ${GREEN}Docker Compose (Recommended)${NC}"
         echo "   Run all services using Docker:"
-        echo "   → Use: docker compose -f deploy/docker-compose.yaml up -d"
+        echo "   → Use: ./scripts/run_dashboard_stack.sh up -d"
         echo "   → All containers will run natively without emulation"
         echo "   → Best performance and compatibility"
         echo

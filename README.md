@@ -1,132 +1,94 @@
-# NVIDIA BioNeMo Blueprint: Protein Binder Design
+# Protein Binder Design Blueprint (MCP + Dashboard)
 
-![A workflow diagram of the Protein Design Blueprint](docs/Protein_Design_Architecture_Diagram.png)
+This repository packages an end-to-end **protein binder design** workflow behind a simple control plane:
 
-The NVIDIA BioNeMo Blueprint for protein binder design shows how generative AI and accelerated NIM microservices can be used to design binders to a target protein sequence smarter and faster. This workflow simplifies the process of _in silico_ protein binder design by automatically generating binder sequences and predicted structures for the binder and target.
+- **MCP Server** (FastAPI) orchestrates jobs and stores results
+- **MCP Dashboard** (Next.js) submits jobs and visualizes progress/results
+- Model backends can be:
+  - **AMD64 Docker/NIM services** (where available)
+  - **ARM64 host-native services** (recommended on DGX Spark / aarch64)
+  - **Hybrid/fallback routing** via server config
 
-This Blueprint takes as input a valid amino acid protein sequence. It utilizes the following models:
+## Quick Start (recommended)
 
-- **AlphaFold2**: A deep learning model for predicting protein structure from amino acid sequence, originally developed by DeepMind.
-- **ProteinMPNN**: a deep learning model for predicting amino acid sequences for protein backbones.
-- **RFDiffusion**: a generative model of protein backbones for protein binder design.
-- **AlphaFold2-Multimer**: A deep learning model for predicting protein structure of multimers from a list of amino acid sequences, originally developed by DeepMind.
+**⚡ Performance**: Now includes [AlphaFold optimizations](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) for **29% faster** inference (balanced preset default).
 
-Once completed, this Blueprint outputs predicted multimer structures (in PDB format) for the target protein sequence and any generated peptide binders. These binder-target multimeric structures can then be assessed to find binders that effectively bind the target protein.
+Start the Dashboard + MCP Server stack (auto-selects the right compose file for your platform):
 
-## System Requirements
-
-The docker compose setup for this NIM Agent Blueprint requires the following specifications:
-- At least 1300 GB (1.3 TB) of fast NVMe SSD space
-- A modern CPU with at least 24 CPU cores
-- At least 64 GB of RAM
-- Two or more NVIDIA L40s, A100, or H100 GPUs
-
-### Platform Support
-
-This project supports both **AMD64** and **ARM64** architectures:
-
-- **AMD64/x86_64** (Recommended): Native support for all NVIDIA NIM containers with optimal performance
-- **ARM64/aarch64**: Supported with Docker emulation or native installation
-  - Docker approach: AMD64 containers run via emulation (may have performance impact)
-  - Native approach: Install tools directly on ARM64 for better performance
-
-Run `./scripts/detect_platform.sh` to check your system and get platform-specific recommendations.
-
-## Get Started
-
-### Quick Platform Check
 ```bash
-./scripts/detect_platform.sh
-```
-This script will detect your system architecture and provide tailored recommendations.
-
-### Documentation
-
-#### General Setup
-- [🚀 Local Setup Guide](docs/LOCAL_SETUP.md) - Comprehensive local development setup
-- [📋 System Verification Report](docs/SYSTEM_VERIFICATION.md) - Check your system compatibility
-- [Deploy with Docker Compose](deploy)
-- [Deploy with Helm](protein-design-chart)
-- [Deploy with MCP Server and Dashboard](docs/DOCKER_MCP_README.md) ⭐ **New!**
-- [Deploy Natively on DGX Spark](docs/DGX_SPARK_NATIVE_DEPLOYMENT.md) ⭐ **New!**
-- [Source code](src)
-
-#### ARM64-Specific Guides
-- [📘 **ARM64 Complete Guide**](docs/ARM64_COMPLETE_GUIDE.md) - **NEW: Comprehensive ARM64 support guide**
-- [🔌 **ARM64 CUDA Fallback Guide**](docs/ARM64_CUDA_FALLBACK_GUIDE.md) - **NEW: Fallback solutions for ARM64 CUDA**
-- [🚀 ARM64 Quick Start](docs/ARM64_QUICK_START.md) - Quick start for ARM64 systems
-- [✅ ARM64 Completion Checklist](docs/ARM64_COMPLETION_CHECKLIST.md) - Step-by-step guide to complete ARM64 porting
-- [🤖 ARM64 Automation Summary](docs/ARM64_AUTOMATION_SUMMARY.md) - Overview of automated ARM64 porting
-- [🏗️ ARM64 Deployment Guide](docs/ARM64_DEPLOYMENT.md) - Complete guide for ARM64 deployment
-- [⚙️ ARM64 Compatibility Guide](docs/ARM64_COMPATIBILITY.md) - Understanding ARM64 compatibility
-- [🔧 ARM64 Native Installation](docs/ARM64_NATIVE_INSTALLATION.md) - Advanced: Install tools natively on ARM64
-
-## Quick Start
-
-### Automated Setup (Recommended)
-```bash
-./scripts/setup_local.sh
+./scripts/run_dashboard_stack.sh up -d --build
 ```
 
-### Manual Setup
-Deploy the blueprint using [Docker Compose](deploy) or [Helm](protein-design-chart)
-=======
-### Option 1: Full Stack with MCP Server & Dashboard (Recommended)
-Deploy the complete stack including MCP server, web dashboard, and Jupyter:
+Open:
+
+- Dashboard: http://localhost:${MCP_DASHBOARD_HOST_PORT:-3000}
+- MCP Server health: http://localhost:${MCP_SERVER_HOST_PORT:-8011}/health
+
+Submit a demo job:
+
 ```bash
-export NGC_CLI_API_KEY=<your-key>
-export HOST_NIM_CACHE=~/.cache/nim
-docker compose -f deploy/docker-compose-full.yaml up
+./scripts/submit_demo_job.sh
 ```
 
-Access the services:
-- **MCP Dashboard**: http://localhost:3000 (Web UI for job submission and monitoring)
-- **Jupyter Notebook**: http://localhost:8888 (Interactive notebooks)
-- **MCP Server API**: http://localhost:8000/docs (API documentation)
+Monitor a job from the CLI (helps detect "is it hung?" and prints progress + cache/mem metrics):
 
-### Option 2: Native Deployment on DGX Spark ⭐ **New!**
-Run models directly on DGX Spark hardware without NIM containers:
 ```bash
-# Install models natively (see docs/DGX_SPARK_NATIVE_DEPLOYMENT.md for details)
-export MODEL_BACKEND=native
-cd mcp-server
-./start-native.sh
+./scripts/monitor_job.sh <job_id> --metrics
 ```
 
-Benefits:
-- ✅ 5-10x lower latency
-- ✅ 3x higher throughput  
-- ✅ 50% memory reduction
-- ✅ Direct GPU control
-- ✅ No container overhead
+## Zero-Touch Native Installer (AlphaFold + MMseqs2 + GPU Acceleration)
 
-See [DGX Spark Native Deployment Guide](docs/DGX_SPARK_NATIVE_DEPLOYMENT.md) for complete installation and configuration instructions.
+Use the unified installer to provision AlphaFold (tiered DBs), MMseqs2, RFDiffusion, and ProteinMPNN with one command. MMseqs2 databases are automatically built to `~/.cache/alphafold/mmseqs2`.
 
-### Option 3: Hybrid Mode (Native + NIM Fallback)
-Best for gradual migration - tries native execution first, falls back to NIM if unavailable:
-```bash
-export MODEL_BACKEND=hybrid
-cd mcp-server
-./start-hybrid.sh
-```
+**🚀 NEW**: Automatically detects and configures GPU acceleration for 5-10x faster MSA generation!
 
-### Option 4: NIMs Only
-Deploy just the NIM services using [Docker Compose](deploy) or [Helm](protein-design-chart):
-```bash
-cd ./src
-jupyter notebook
-```
+| Profile | Command | What it does |
+| --- | --- | --- |
+| Minimal (CPU-friendly) | `bash scripts/install_all_native.sh --minimal` | Installs tools + UniRef90 → MMseqs2 (fastest download/build) |
+| Recommended (dev) | `bash scripts/install_all_native.sh --recommended` | Installs tools + UniRef90 + small BFD → MMseqs2 + **GPU auto-config** |
+| Full (production) | `bash scripts/install_all_native.sh --full` | Installs tools + full AlphaFold DBs (UniRef90, BFD, PDB SeqRes, UniProt) → MMseqs2 + **GPU auto-config** |
 
-For detailed setup instructions, see [LOCAL_SETUP.md](LOCAL_SETUP.md)
+Notes:
+- GPU detection and configuration is automatic - no manual setup needed
+- If GPU detected: Creates GPU server scripts for 5-10x MSA speedup
+- GPU indexing is auto-detected; falls back to CPU if no GPU.
+- MMseqs2 databases are created in GPU-server mode (works with existing databases)
+- For details: See [MMseqs2 GPU Quickstart](docs/MMSEQS2_GPU_QUICKSTART.md)
+- Existing MMseqs2 DBs are auto-detected and skipped; use `rm -rf ~/.cache/alphafold/mmseqs2` to force rebuild.
+- Integration details: [docs/MMSEQS2_INSTALLER_INTEGRATION.md](docs/MMSEQS2_INSTALLER_INTEGRATION.md).
 
-## Set Up With Docker Compose
+## Ports & Services (defaults)
 
-Navigate to the [deploy](deploy) directory to learn how to start up the NIMs.
+- Dashboard: `3000`
+- MCP Server (host): `${MCP_SERVER_HOST_PORT:-8011}` (container listens on `8000`)
+- ARM64 host-native wrappers (when enabled):
+  - AlphaFold2: `18081` (includes `/v1/metrics`)
+  - RFDiffusion: `18082`
+  - ProteinMPNN: `18083`
+  - AlphaFold2-Multimer: `18084`
 
-## Set up with Helm
+## API Notes
 
-Follow the instructions in the [protein-design-chart](protein-design-chart) directory and deploy the Helm chart
+- Job status: `GET /api/jobs/{job_id}`
+- Optional diagnostics (best-effort):
+  - `include_metrics=1` includes stage timing + host snapshots
+  - `include_residency=1` also includes DB page-cache residency sampling (slower)
+- Errors are **UI-safe by default** (summarized/truncated). If you need the full failure detail for debugging:
+  - `GET /api/jobs/{job_id}?include_error_detail=1`
 
-## Notebook
+## ARM64 / DGX Spark notes
 
-An example of how to call each protein binder design step is located in [src/protein-binder-design.ipynb](src/protein-binder-design.ipynb)
+- AlphaFold2-Multimer uses conservative defaults on ARM64 to avoid known JAX/XLA bf16 conversion crashes.
+- You can override bfloat16 behavior via environment variables (see the ARM64 docs in `docs/`).
+
+## Where to go next
+
+- New here? Start with [START_HERE.md](START_HERE.md)
+- **🔥 IMPORTANT FOR AI AGENTS**: [INSTITUTIONAL_KNOWLEDGE.md](INSTITUTIONAL_KNOWLEDGE.md) - Complete GPU/MMseqs2 optimization work (10x speedup achieved!)
+- **GPU Integration Summary**: [INTEGRATION_COMPLETE.md](INTEGRATION_COMPLETE.md) - All GPU/CUDA 13.1/MMseqs2 work verified (34/34 checks)
+- **Zero-Touch GPU Setup**: [ZERO_TOUCH_GPU_COMPLETE.md](ZERO_TOUCH_GPU_COMPLETE.md) - Automated GPU configuration details
+- **Performance optimizations**: [docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md](docs/ALPHAFOLD_OPTIMIZATION_GUIDE.md) **(29% faster)**
+- **MMseqs2 GPU Guide**: [docs/MMSEQS2_GPU_QUICKSTART.md](docs/MMSEQS2_GPU_QUICKSTART.md) - User guide for 10x speedup
+- Docker + MCP stack details: [docs/DOCKER_MCP_README.md](docs/DOCKER_MCP_README.md)
+- Deployment compose files: [deploy/](deploy/)
+- Architecture/background: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
