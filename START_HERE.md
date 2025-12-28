@@ -10,7 +10,7 @@ If you only want the web UI (Dashboard) and a working end-to-end demo, follow th
 2. Press `Ctrl+Shift+P` → run **Tasks: Run Task**.
 3. Select **Stack: Start + Open Dashboard**.
 
-That’s it — it will:
+That's it — it will:
 - auto-pick the correct stack for your computer (ARM64 vs AMD64)
 - build containers (first run takes longer)
 - open the Dashboard in your browser
@@ -28,7 +28,7 @@ Open the Dashboard:
 
 ## 3) Quick health check (recommended)
 
-If anything feels “stuck”, run:
+If anything feels "stuck", run:
 
 ```bash
 ./scripts/doctor_stack.sh
@@ -78,15 +78,15 @@ Use **fallback** mode to try providers in order (recommended). These settings pe
 
 ## Common questions
 
-### “Some services show not_ready or disabled”
+### "Some services show not_ready or disabled"
 
-That’s normal depending on platform and configuration:
+That's normal depending on platform and configuration:
 - On **AMD64**, the NIM model services can run natively (best supported).
 - On **ARM64**, the repo includes an ARM64-native stack, but some heavyweight models may require additional model downloads/configuration.
 
-If you’re unsure what you’re seeing, run `./scripts/doctor_stack.sh` and share the output.
+If you're unsure what you're seeing, run `./scripts/doctor_stack.sh` and share the output.
 
-### “Port 3000 is already in use”
+### "Port 3000 is already in use"
 
 Run with a different dashboard port:
 
@@ -96,5 +96,9 @@ MCP_DASHBOARD_HOST_PORT=3005 ./scripts/run_dashboard_stack.sh up -d --build
 
 ## Where to go next
 
+- **🔥 FOR AI AGENTS & CONTRIBUTORS**: [INSTITUTIONAL_KNOWLEDGE.md](INSTITUTIONAL_KNOWLEDGE.md) - Complete GPU/MMseqs2 optimization history (**READ THIS FIRST!**)
+- **GPU Integration Complete**: [INTEGRATION_COMPLETE.md](INTEGRATION_COMPLETE.md) - All GPU/CUDA 13.1/MMseqs2 work (34/34 checks passing)
+- **Zero-Touch GPU Setup**: [ZERO_TOUCH_GPU_COMPLETE.md](ZERO_TOUCH_GPU_COMPLETE.md) - Automated GPU configuration
+- **MMseqs2 GPU Quickstart**: [docs/MMSEQS2_GPU_QUICKSTART.md](docs/MMSEQS2_GPU_QUICKSTART.md) - User guide for 10x speedup
 - MCP + Docker guide: [docs/DOCKER_MCP_README.md](docs/DOCKER_MCP_README.md)
 - Platform guidance: [scripts/detect_platform.sh](scripts/detect_platform.sh)
