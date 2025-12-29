@@ -71,66 +71,6 @@ _NIM_ENV_KEYS: Dict[ServiceName, str] = {
 }
 
 
-_EXTERNAL_ENV_KEYS: Dict[ServiceName, str] = {
-    "alphafold": "EXTERNAL_ALPHAFOLD_URL",
-    "rfdiffusion": "EXTERNAL_RFDIFFUSION_URL",
-    "proteinmpnn": "EXTERNAL_PROTEINMPNN_URL",
-    "alphafold_multimer": "EXTERNAL_ALPHAFOLD_MULTIMER_URL",
-}
-
-
-def _apply_nim_env_overrides(cfg: "MCPServerConfig") -> bool:
-    """Apply NIM service URL overrides from env.
-
-    Precedence rule: if an env var like ALPHAFOLD_URL is present, it overrides
-    any persisted config value (including disabling the service).
-    """
-
-    changed = False
-    service_urls = dict(cfg.nim.service_urls or {})
-    for service_name, env_key in _NIM_ENV_KEYS.items():
-        if env_key not in os.environ:
-            continue
-        new_value = _resolve_env_url(env_key)
-        if service_urls.get(service_name) != new_value:
-            service_urls[service_name] = new_value
-            changed = True
-    if changed:
-        cfg.nim.service_urls = service_urls
-    return changed
-
-
-def _apply_external_env_overrides(cfg: "MCPServerConfig") -> bool:
-    """Apply External service URL overrides from env.
-
-    Precedence rule: if an env var like EXTERNAL_ALPHAFOLD_URL is present, it
-    overrides any persisted config value (including disabling the service).
-
-    This is critical for zero-touch docker-compose setups where operators want
-    to route to host-native wrappers without requiring dashboard clicks.
-    """
-
-    changed = False
-    service_urls = dict(cfg.external.service_urls or {})
-    saw_enabled_url = False
-    for service_name, env_key in _EXTERNAL_ENV_KEYS.items():
-        if env_key not in os.environ:
-            continue
-        new_value = _resolve_env_url(env_key)
-        if new_value:
-            saw_enabled_url = True
-        if service_urls.get(service_name) != new_value:
-            service_urls[service_name] = new_value
-            changed = True
-    if changed:
-        cfg.external.service_urls = service_urls
-    # If the operator provided any external URL, force-enable external provider.
-    if saw_enabled_url and not cfg.external.enabled:
-        cfg.external.enabled = True
-        changed = True
-    return changed
-
-
 def _migrate_localhost_nim_urls_from_env(cfg: "MCPServerConfig") -> bool:
     """If a persisted config still uses old localhost defaults, migrate those
     entries to current env-provided URLs (or disable if env explicitly disables).
@@ -281,17 +221,6 @@ class EmbeddedDownloads(BaseModel):
     # Subdirectory under model_dir to place/extract databases.
     alphafold_db_subdir: str = "alphafold_db"
 
-    # AlphaFold2 / MGnify
-    # Some environments block the default MGnify download (HTTP 403). These settings
-    # allow users to provide an alternate URL (e.g., a signed URL or internal mirror)
-    # or opt into a HuggingFace-backed fallback.
-    alphafold_mgnify_url: Optional[str] = None
-    alphafold_mgnify_fallback: Literal["none", "huggingface"] = "none"
-    alphafold_mgnify_hf_dataset: str = "tattabio/OMG_prot50"
-    # If set, this token may be persisted to disk alongside other runtime config.
-    # Prefer supplying via environment variables when possible.
-    alphafold_mgnify_hf_token: Optional[str] = None
-
 
 class RunnerCommand(BaseModel):
     """A command template (argv) for running a model inside the MCP container.
@@ -345,8 +274,7 @@ class RoutingConfig(BaseModel):
     primary: ProviderName = "nim"
 
     # Used when mode == "fallback"; order to try.
-    # Prefer local inference first (embedded or locally hosted wrappers), then fall back to NIM.
-    order: List[ProviderName] = Field(default_factory=lambda: ["embedded", "external", "nim"])
+    order: List[ProviderName] = Field(default_factory=lambda: ["embedded", "nim", "external"])
 
 
 class MCPServerConfig(BaseModel):
@@ -371,8 +299,6 @@ class RuntimeConfigManager:
         if _apply_routing_env_overrides(self._config):
             self._revision += 1
         if _apply_embedded_env_overrides(self._config):
-            self._revision += 1
-        if _apply_external_env_overrides(self._config):
             self._revision += 1
         self._load_from_disk_if_present()
 
@@ -409,12 +335,6 @@ class RuntimeConfigManager:
                     self._persist()
 
             # Apply env overrides after loading persisted config.
-            if _apply_nim_env_overrides(self._config):
-                self._revision += 1
-
-            if _apply_external_env_overrides(self._config):
-                self._revision += 1
-
             if _apply_embedded_env_overrides(self._config):
                 self._revision += 1
 
