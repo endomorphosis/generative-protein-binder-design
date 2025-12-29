@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { extractFirstTextContent, mcpCallTool } from '@/lib/mcp-sdk-client'
+import { getMockJob, isMockMode } from '@/lib/mock'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,6 +20,14 @@ export async function POST(req: Request) {
 
   if (!jobId || typeof jobId !== 'string') {
     return NextResponse.json({ error: 'Missing job_id' }, { status: 400 })
+  }
+
+  if (isMockMode()) {
+    const job = getMockJob(jobId)
+    if (!job) {
+      return NextResponse.json({ error: `Unknown job_id: ${jobId}` }, { status: 404 })
+    }
+    return NextResponse.json(job)
   }
 
   const result = await mcpCallTool('get_job_status', { job_id: jobId })

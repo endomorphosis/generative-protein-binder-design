@@ -32,6 +32,10 @@ The dashboard will be available at http://localhost:3000
 	- Local dev MCP server default: `http://localhost:8000`
 	- Full stack (via `./scripts/run_dashboard_stack.sh`) default: `http://localhost:${MCP_SERVER_HOST_PORT:-8011}`
 
+- `MCP_DASHBOARD_MOCK` - Enable dashboard-local mock backend (`1`/`true`)
+	- When enabled, `/api/mcp/*` routes return deterministic mock tool results (jobs, services, settings, and PDB data)
+	- Useful for UI/visualization testing without any running AI/ML services
+
 ## Technology Stack
 
 - Next.js 14

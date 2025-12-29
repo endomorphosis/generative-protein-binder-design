@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { mcpClient } from '@/lib/mcp-client'
 import { ProteinSequenceInput } from '@/lib/types'
 
 interface Props {
   onJobCreated: () => void
+  prefill?: Partial<ProteinSequenceInput>
 }
 
-export default function ProteinSequenceForm({ onJobCreated }: Props) {
+export default function ProteinSequenceForm({ onJobCreated, prefill }: Props) {
   const [formData, setFormData] = useState<ProteinSequenceInput>({
     sequence: '',
     job_name: '',
@@ -16,6 +17,19 @@ export default function ProteinSequenceForm({ onJobCreated }: Props) {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!prefill) return
+
+    setFormData((prev) => ({
+      ...prev,
+      sequence: typeof prefill.sequence === 'string' ? prefill.sequence : prev.sequence,
+      num_designs:
+        typeof prefill.num_designs === 'number' && Number.isFinite(prefill.num_designs)
+          ? prefill.num_designs
+          : prev.num_designs,
+    }))
+  }, [prefill?.sequence, prefill?.num_designs])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

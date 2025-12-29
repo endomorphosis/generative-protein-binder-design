@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { extractFirstTextContent, mcpCallTool } from '@/lib/mcp-sdk-client'
+import { isMockMode } from '@/lib/mock'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,6 +15,16 @@ function tryParseJson(text: string): any {
 }
 
 export async function GET() {
+  if (isMockMode()) {
+    return NextResponse.json({
+      proteinmpnn: { status: 'ready', url: 'mock://proteinmpnn', backend: 'mock' },
+      rfdiffusion: { status: 'ready', url: 'mock://rfdiffusion', backend: 'mock' },
+      alphafold: { status: 'ready', url: 'mock://alphafold', backend: 'mock' },
+      alphafold_multimer: { status: 'ready', url: 'mock://alphafold-multimer', backend: 'mock' },
+      mmseqs2: { status: 'ready', url: 'mock://mmseqs2', backend: 'mock' },
+    })
+  }
+
   try {
     const result = await mcpCallTool('check_services', {})
     const text = extractFirstTextContent(result)

@@ -44,7 +44,7 @@ generative-protein-binder-design/
 ├── tools/                        # External tools (alphafold2, rfdiffusion, proteinmpnn)
 ├── mcp-server/                   # MCP server implementation
 ├── mcp-dashboard/                # Dashboard frontend
-├── mcp-dashboard-real/           # Legacy/alt dashboard
+├── mcp-dashboard-real/           # Deprecated legacy dashboard (use mcp-dashboard/)
 ├── .github/                      # GitHub workflows and templates
 └── user-container/, outputs/, benchmarks/  # Supporting assets
 ```

@@ -14,6 +14,7 @@ import { Job } from '@/lib/types'
 export default function Home() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [prefill, setPrefill] = useState<{ sequence?: string; num_designs?: number } | null>(null)
 
   const handleJobCreated = () => {
     setRefreshTrigger(prev => prev + 1)
@@ -21,6 +22,10 @@ export default function Home() {
 
   const handleJobSelected = (job: Job) => {
     setSelectedJob(job)
+  }
+
+  const handleIterate = (input: { sequence: string; num_designs?: number }) => {
+    setPrefill({ sequence: input.sequence, num_designs: input.num_designs })
   }
 
   useEffect(() => {
@@ -88,7 +93,7 @@ export default function Home() {
               <h2 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">
                 New Design Job
               </h2>
-              <ProteinSequenceForm onJobCreated={handleJobCreated} />
+              <ProteinSequenceForm onJobCreated={handleJobCreated} prefill={prefill ?? undefined} />
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
@@ -126,7 +131,7 @@ export default function Home() {
                 Results
               </h2>
               {selectedJob ? (
-                <ResultsViewer job={selectedJob} />
+                <ResultsViewer job={selectedJob} onIterate={handleIterate} />
               ) : (
                 <div className="text-center text-gray-500 dark:text-gray-400 py-12">
                   Select a job to view results

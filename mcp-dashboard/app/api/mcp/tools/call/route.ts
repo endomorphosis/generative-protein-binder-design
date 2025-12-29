@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { mcpCallTool } from '@/lib/mcp-sdk-client'
+import { handleMockToolCall, isMockMode } from '@/lib/mock'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,11 @@ export async function POST(req: Request) {
 
   if (!name || typeof name !== 'string') {
     return NextResponse.json({ error: 'Missing tool name' }, { status: 400 })
+  }
+
+  if (isMockMode()) {
+    const result = handleMockToolCall(name, args)
+    return NextResponse.json(result)
   }
 
   const result = await mcpCallTool(name, args)

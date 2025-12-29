@@ -33,6 +33,8 @@ export default defineConfig({
     env: {
       // Avoid Next.js telemetry in CI
       NEXT_TELEMETRY_DISABLED: '1',
+      // Ensure the dashboard never makes outbound MCP calls during E2E.
+      MCP_DASHBOARD_MOCK: process.env.MCP_DASHBOARD_MOCK || '1',
       // Ensure the dashboard routes resolve locally
       MCP_SERVER_URL: process.env.MCP_SERVER_URL || 'http://127.0.0.1:8010',
     },

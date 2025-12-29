@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getAlphaFoldSettings, updateAlphaFoldSettings, resetAlphaFoldSettings, extractFirstTextContent } from '@/lib/mcp-sdk-client'
+import { extractFirstTextContent } from '@generative-protein/mcp-js-sdk'
 
 interface AlphaFoldSettings {
   speed_preset?: string
@@ -24,6 +24,18 @@ export default function AlphaFoldSettings({ onSettingsChanged }: Props) {
   const [success, setSuccess] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
 
+  const callTool = async (name: string, args: Record<string, any>) => {
+    const res = await fetch('/api/mcp/tools/call', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, arguments: args || {} }),
+    })
+    if (!res.ok) {
+      throw new Error(`Tool call failed (${res.status})`)
+    }
+    return res.json()
+  }
+
   // Fetch current settings on mount
   useEffect(() => {
     fetchSettings()
@@ -33,7 +45,7 @@ export default function AlphaFoldSettings({ onSettingsChanged }: Props) {
     setLoading(true)
     setError(null)
     try {
-      const result = await getAlphaFoldSettings()
+      const result = await callTool('get_alphafold_settings', {})
       const text = extractFirstTextContent(result)
       const parsed = JSON.parse(text)
       setSettings(parsed)
@@ -57,7 +69,7 @@ export default function AlphaFoldSettings({ onSettingsChanged }: Props) {
     setError(null)
     setSuccess(null)
     try {
-      const result = await updateAlphaFoldSettings(settings)
+      const result = await callTool('update_alphafold_settings', settings)
       const text = extractFirstTextContent(result)
       const parsed = JSON.parse(text)
       
@@ -85,7 +97,7 @@ export default function AlphaFoldSettings({ onSettingsChanged }: Props) {
     setError(null)
     setSuccess(null)
     try {
-      const result = await resetAlphaFoldSettings()
+      const result = await callTool('reset_alphafold_settings', {})
       const text = extractFirstTextContent(result)
       const parsed = JSON.parse(text)
       

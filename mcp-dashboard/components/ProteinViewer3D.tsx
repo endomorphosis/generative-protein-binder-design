@@ -8,17 +8,91 @@ interface ProteinViewer3DProps {
   pdbData: string
   onClose: () => void
   title?: string
+  sequence?: string
+  onUseSequence?: (sequence: string) => void
 }
 
-export default function ProteinViewer3D({ pdbData, onClose, title }: ProteinViewer3DProps) {
+export default function ProteinViewer3D({ pdbData, onClose, title, sequence, onUseSequence }: ProteinViewer3DProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [renderMode, setRenderMode] = useState<'ribbon' | 'cartoon' | 'sphere' | 'stick'>('ribbon')
   const [showHeatmap, setShowHeatmap] = useState(false)
+  const [selectedResidues, setSelectedResidues] = useState<Array<{ chain: string; residueNum: number; residue: string }>>([])
+  const [positionsText, setPositionsText] = useState<string>('')
+  const [numVariants, setNumVariants] = useState<number>(5)
+  const [variantsResult, setVariantsResult] = useState<any>(null)
+  const [variantsError, setVariantsError] = useState<string | null>(null)
+  const [variantsRunning, setVariantsRunning] = useState(false)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
+
+  const parsePositions = (text: string) => {
+    const nums = text
+      .split(/[^0-9]+/g)
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((t) => Number(t))
+      .filter((n) => Number.isFinite(n) && n > 0)
+    const uniq = Array.from(new Set(nums))
+    uniq.sort((a, b) => a - b)
+    return uniq
+  }
+
+  const callProposeVariants = async () => {
+    setVariantsError(null)
+    setVariantsResult(null)
+
+    if (!sequence || typeof sequence !== 'string' || !sequence.trim()) {
+      setVariantsError('Sequence is not available for this structure')
+      return
+    }
+
+    const positions = parsePositions(positionsText)
+      .filter((p) => p >= 1 && p <= sequence.length)
+
+    if (positions.length === 0) {
+      setVariantsError('Select residues (Ball & Stick) or enter positions (1-based)')
+      return
+    }
+
+    setVariantsRunning(true)
+    try {
+      const res = await fetch('/api/mcp/tools/call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'propose_sequence_variants',
+          arguments: {
+            sequence,
+            positions,
+            num_variants: numVariants,
+          },
+        }),
+      })
+
+      const payload = await res.json()
+      if (!res.ok) {
+        throw new Error(payload?.error || `HTTP ${res.status}`)
+      }
+
+      const text = payload?.content?.find((c: any) => c?.type === 'text')?.text
+      if (typeof text === 'string' && text.trim()) {
+        try {
+          setVariantsResult(JSON.parse(text))
+        } catch {
+          setVariantsResult({ variants: [], raw: text })
+        }
+      } else {
+        setVariantsResult(null)
+      }
+    } catch (e: any) {
+      setVariantsError(e?.message || 'Variant proposal failed')
+    } finally {
+      setVariantsRunning(false)
+    }
+  }
 
   useEffect(() => {
     if (!containerRef.current || !pdbData) return
@@ -96,6 +170,40 @@ export default function ProteinViewer3D({ pdbData, onClose, title }: ProteinView
       }
       animate()
 
+      const raycaster = new THREE.Raycaster()
+      const mouse = new THREE.Vector2()
+      const handleClick = (evt: MouseEvent) => {
+        if (renderMode !== 'sphere') return
+        if (!rendererRef.current || !cameraRef.current || !sceneRef.current) return
+
+        const rect = renderer.domElement.getBoundingClientRect()
+        mouse.x = ((evt.clientX - rect.left) / rect.width) * 2 - 1
+        mouse.y = -(((evt.clientY - rect.top) / rect.height) * 2 - 1)
+        raycaster.setFromCamera(mouse, cameraRef.current)
+
+        const intersects = raycaster.intersectObjects(sceneRef.current.children, true)
+        const hit = intersects.find((i) => (i.object as any)?.userData?.kind === 'atom')
+        const ud = (hit?.object as any)?.userData
+        if (!ud) return
+
+        const chain = String(ud.chain || '')
+        const residueNum = Number(ud.residueNum)
+        const residue = String(ud.residue || '')
+        if (!Number.isFinite(residueNum)) return
+
+        setSelectedResidues((prev) => {
+          const exists = prev.some((r) => r.chain === chain && r.residueNum === residueNum)
+          const next = exists
+            ? prev.filter((r) => !(r.chain === chain && r.residueNum === residueNum))
+            : [...prev, { chain, residueNum, residue }]
+
+          const pos = Array.from(new Set(next.map((r) => r.residueNum))).sort((a, b) => a - b)
+          setPositionsText(pos.join(','))
+          return next
+        })
+      }
+      renderer.domElement.addEventListener('click', handleClick)
+
       // Handle resize
       const handleResize = () => {
         if (!containerRef.current || !camera || !renderer) return
@@ -107,6 +215,7 @@ export default function ProteinViewer3D({ pdbData, onClose, title }: ProteinView
 
       return () => {
         window.removeEventListener('resize', handleResize)
+        renderer.domElement.removeEventListener('click', handleClick)
         if (containerRef.current && renderer.domElement) {
           containerRef.current.removeChild(renderer.domElement)
         }
@@ -332,6 +441,13 @@ export default function ProteinViewer3D({ pdbData, onClose, title }: ProteinView
         const color = colors[atom.element] || colors.default
         const material = new THREE.MeshPhongMaterial({ color })
         const sphere = new THREE.Mesh(geometry, material)
+        ;(sphere as any).userData = {
+          kind: 'atom',
+          chain: atom.chain,
+          residueNum: atom.residueNum,
+          residue: atom.residue,
+          atomName: atom.atomName,
+        }
         sphere.position.set(atom.x, atom.y, atom.z)
         scene.add(sphere)
       })
@@ -398,6 +514,8 @@ export default function ProteinViewer3D({ pdbData, onClose, title }: ProteinView
           </div>
           <button
             onClick={onClose}
+            aria-label="Close 3D Viewer"
+            data-testid="close-3d-viewer"
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 p-2"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -463,6 +581,54 @@ export default function ProteinViewer3D({ pdbData, onClose, title }: ProteinView
           >
             🔥 B-Factor Heatmap
           </button>
+
+          {sequence && (
+            <>
+              <div className="border-l border-gray-300 dark:border-gray-600 h-8 mx-2"></div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Variants:</span>
+                <input
+                  aria-label="Variant positions"
+                  data-testid="variant-positions"
+                  value={positionsText}
+                  onChange={(e) => setPositionsText(e.target.value)}
+                  placeholder="positions (1-based) e.g. 12,15,16"
+                  className="px-3 py-2 rounded text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 w-64"
+                />
+                <input
+                  aria-label="Number of variants"
+                  data-testid="variant-num"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={numVariants}
+                  onChange={(e) => {
+                    const n = Number(e.target.value)
+                    setNumVariants(Number.isFinite(n) && n >= 1 ? Math.min(20, Math.floor(n)) : 5)
+                  }}
+                  className="px-3 py-2 rounded text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 w-24"
+                />
+                <button
+                  onClick={callProposeVariants}
+                  data-testid="propose-variants"
+                  disabled={variantsRunning}
+                  className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                    variantsRunning
+                      ? 'bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                  title={renderMode === 'sphere' ? 'Click atoms to select residues' : 'Switch to Ball & Stick to select residues'}
+                >
+                  {variantsRunning ? 'Proposing…' : 'Propose Variants'}
+                </button>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {renderMode === 'sphere'
+                    ? `Selected: ${selectedResidues.length} residue(s). Click atoms to toggle.`
+                    : `Selected: ${selectedResidues.length} residue(s). Use Ball & Stick to click.`}
+                </span>
+              </div>
+            </>
+          )}
           
           <div className="ml-auto text-xs text-gray-500 dark:text-gray-400">
             💡 Use mouse to rotate, scroll to zoom
@@ -485,6 +651,58 @@ export default function ProteinViewer3D({ pdbData, onClose, title }: ProteinView
 
         {/* Footer with legend */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+          {(variantsError || (variantsResult && variantsResult?.variants?.length)) && (
+            <div className="mb-3">
+              {variantsError && (
+                <div className="text-sm text-red-600 dark:text-red-400">{variantsError}</div>
+              )}
+              {variantsResult?.variants?.length ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Proposed Variants (best-first)
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {variantsResult.variants.slice(0, 6).map((v: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2"
+                      >
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium text-gray-800 dark:text-gray-200">Score</span>
+                          <span
+                            data-testid={`variant-score-${idx}`}
+                            className="text-gray-700 dark:text-gray-300"
+                          >
+                            {String(v?.score ?? '')}
+                          </span>
+                        </div>
+                        {typeof v?.sequence === 'string' && onUseSequence && (
+                          <div className="mt-2">
+                            <button
+                              data-testid={`iterate-variant-${idx}`}
+                              onClick={() => {
+                                onUseSequence(v.sequence)
+                                onClose()
+                              }}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-3 rounded transition-colors"
+                            >
+                              Iterate with this
+                            </button>
+                          </div>
+                        )}
+                        <div
+                          data-testid={`variant-sequence-${idx}`}
+                          className="mt-1 font-mono text-xs text-gray-700 dark:text-gray-300 break-all"
+                        >
+                          {String(v?.sequence ?? '')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
           <div className="flex items-center gap-6 text-sm flex-wrap">
             {renderMode === 'ribbon' || renderMode === 'cartoon' ? (
               <>

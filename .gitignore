@@ -56,3 +56,6 @@ coverage/
 
 # Generated installer outputs (wrappers, env files)
 tools/generated/
+mcp-dashboard/playwright-report/
+mcp-dashboard/test-results/
+mcp-js-sdk/test-results/

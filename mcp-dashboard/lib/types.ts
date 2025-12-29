@@ -4,6 +4,10 @@ export interface Job {
   created_at: string
   updated_at: string
   job_name?: string
+  input?: {
+    sequence?: string
+    num_designs?: number
+  }
   progress: {
     alphafold: string
     rfdiffusion: string

@@ -13,6 +13,11 @@ test.describe('Jobs flow', () => {
   test('create a job and see it in the list + results placeholder', async ({ page }) => {
     const jobs: any[] = []
 
+    page.on('dialog', async (dialog) => {
+      // Accept deletion confirmation dialogs.
+      await dialog.accept()
+    })
+
     await page.route('**/api/mcp/services/status', async (route) => {
       await jsonRoute(route, { alphafold: { status: 'ready', url: 'x' } })
     })
@@ -70,5 +75,9 @@ test.describe('Jobs flow', () => {
     await page.getByText('e2e job').click()
 
     await expect(page.getByText(/Job is created/i)).toBeVisible()
+
+    // Delete the job and confirm it disappears.
+    await page.getByRole('button', { name: 'Delete' }).click()
+    await expect(page.getByText('e2e job')).toBeHidden()
   })
 })

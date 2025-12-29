@@ -1,0 +1,12 @@
+{
+  "name": "@generative-protein/mcp-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "mcp-binder": "./mcp-binder.js"
+  },
+  "dependencies": {
+    "@generative-protein/mcp-js-sdk": "file:../mcp-js-sdk"
+  }
+}
