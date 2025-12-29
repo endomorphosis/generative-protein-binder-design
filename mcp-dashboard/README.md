@@ -68,4 +68,28 @@ To open the HTML report:
 npx playwright show-report
 ```
 
+## E2E Tests: Real-Model Integration (AlphaFold)
+
+The default E2E suite runs in dashboard mock mode (`MCP_DASHBOARD_MOCK=1`) and does **not** require any ML services.
+
+If you have a running MCP server/stack with real ML backends (AlphaFold in particular), you can run a gated Playwright test that exercises real inference through the dashboard MCP proxy endpoints (and therefore the shared JS SDK invocation path).
+
+Prerequisites:
+- A running MCP server/stack with AlphaFold available (typically requires GPU + model weights).
+- Dashboard mock mode disabled.
+
+Run (from `mcp-dashboard/`):
+
+```bash
+export MCP_INTEGRATION_REAL=1
+export MCP_DASHBOARD_MOCK=0
+export MCP_SERVER_URL=http://127.0.0.1:${MCP_SERVER_HOST_PORT:-8011}
+
+npx playwright test tests/e2e/integration.real.spec.ts --reporter=line
+```
+
+Notes:
+- This test can take many minutes depending on hardware and model settings.
+- The test will fail fast if the AlphaFold backend reports `backend=mock` or a `mock://` URL.
+
 See [DOCKER_MCP_README.md](../docs/DOCKER_MCP_README.md) for more information.
