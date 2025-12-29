@@ -24,6 +24,10 @@ Open:
 - Dashboard: http://localhost:${MCP_DASHBOARD_HOST_PORT:-3000}
 - MCP Server health: http://localhost:${MCP_SERVER_HOST_PORT:-8011}/health
 
+Notes:
+- The compose stacks expose the MCP Server on `8011` by default.
+- Some tooling/demos in this repo also use a **standalone MCP server** on `8010` (see “Run modes” below).
+
 Submit a demo job:
 
 ```bash
@@ -60,12 +64,15 @@ Notes:
 ## Ports & Services (defaults)
 
 - Dashboard: `3000`
-- MCP Server (host): `${MCP_SERVER_HOST_PORT:-8011}` (container listens on `8000`)
-- ARM64 host-native wrappers (when enabled):
-  - AlphaFold2: `18081` (includes `/v1/metrics`)
+- MCP Server (stack host port): `${MCP_SERVER_HOST_PORT:-8011}` (container listens on `8000`)
+- MCP Server (standalone/local container host port, optional): `8010` (container listens on `8000`)
+- Model service ports depend on stack and environment variables, but commonly use:
+  - AlphaFold2: `18081`
   - RFDiffusion: `18082`
   - ProteinMPNN: `18083`
   - AlphaFold2-Multimer: `18084`
+
+In AMD64 NIM stacks these ports map to NIM containers. In ARM64/DGX Spark flows they often map to **host-native wrapper services**.
 
 ## API Notes
 
@@ -84,6 +91,8 @@ Notes:
 ## Where to go next
 
 - New here? Start with [START_HERE.md](START_HERE.md)
+- Docs index (canonical navigation): [docs/INDEX.md](docs/INDEX.md)
+- For AI agents & contributors: [docs/AGENTS.md](docs/AGENTS.md)
 - **🔥 IMPORTANT FOR AI AGENTS**: [INSTITUTIONAL_KNOWLEDGE.md](INSTITUTIONAL_KNOWLEDGE.md) - Complete GPU/MMseqs2 optimization work (10x speedup achieved!)
 - **GPU Integration Summary**: [INTEGRATION_COMPLETE.md](INTEGRATION_COMPLETE.md) - All GPU/CUDA 13.1/MMseqs2 work verified (34/34 checks)
 - **Zero-Touch GPU Setup**: [ZERO_TOUCH_GPU_COMPLETE.md](ZERO_TOUCH_GPU_COMPLETE.md) - Automated GPU configuration details

@@ -25,17 +25,48 @@ MCP_SERVER_HOST_PORT="${MCP_SERVER_HOST_PORT:-8011}"
 MODE="auto"
 if [[ ${1:-} == "--amd64" ]]; then MODE="amd64"; shift; fi
 if [[ ${1:-} == "--arm64" ]]; then MODE="arm64"; shift; fi
+if [[ ${1:-} == "--arm64-host-native" ]]; then MODE="arm64-host-native"; shift; fi
+if [[ ${1:-} == "--host-native" ]]; then MODE="host-native"; shift; fi
 if [[ ${1:-} == "--emulated" ]]; then MODE="emulated"; shift; fi
+if [[ ${1:-} == "--control-plane" ]]; then MODE="control-plane"; shift; fi
 
 COMPOSE_FILE=""
+
+is_host_native_wrappers_healthy() {
+  # Best-effort probe: if the user has started the host-native wrappers on the host,
+  # we should prefer them over NIM.
+  local af_port="${ALPHAFOLD_NATIVE_PORT:-18081}"
+  local rf_port="${RFDIFFUSION_NATIVE_PORT:-18082}"
+  local afm_port="${ALPHAFOLD_MULTIMER_NATIVE_PORT:-18084}"
+
+  curl -fsS "http://localhost:${af_port}/v1/health/ready" >/dev/null 2>&1 \
+    && curl -fsS "http://localhost:${rf_port}/v1/health/ready" >/dev/null 2>&1 \
+    && curl -fsS "http://localhost:${afm_port}/v1/health/ready" >/dev/null 2>&1
+}
+
+has_ngc_key() {
+  [[ -n "${NGC_CLI_API_KEY:-}" ]]
+}
+
 case "$MODE" in
   auto)
     case "$ARCH" in
       x86_64|amd64)
-        COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard.yaml"
+        # Match scripts/run_dashboard_stack.sh:
+        # - prefer host-native wrappers when healthy
+        # - otherwise choose NIM only when NGC key is present
+        # - otherwise run control-plane only
+        if is_host_native_wrappers_healthy; then
+          COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-host-native.yaml"
+        elif has_ngc_key; then
+          COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard.yaml"
+        else
+          COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-default.yaml"
+        fi
         ;;
       aarch64|arm64)
-        COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-arm64-native.yaml"
+        # On ARM64, default to host-native wrappers (real inference).
+        COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-arm64-host-native.yaml"
         ;;
       *)
         err "Unsupported architecture: $ARCH"
@@ -48,6 +79,15 @@ case "$MODE" in
     ;;
   arm64)
     COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-arm64-native.yaml"
+    ;;
+  arm64-host-native)
+    COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-arm64-host-native.yaml"
+    ;;
+  host-native)
+    COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-host-native.yaml"
+    ;;
+  control-plane)
+    COMPOSE_FILE="$ROOT_DIR/deploy/docker-compose-dashboard-default.yaml"
     ;;
   *)
     err "Unknown mode: $MODE"

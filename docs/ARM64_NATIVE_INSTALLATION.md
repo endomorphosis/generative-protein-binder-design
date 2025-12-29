@@ -590,7 +590,8 @@ Update the notebook to use local installations instead of API calls. Replace HTT
 
 ```python
 # Instead of:
-# response = requests.post('http://localhost:8081/v1/predict', json=data)
+# response = requests.post('http://localhost:18081/v1/predict', json=data)
+# (Some legacy/custom setups may publish 8081 instead.)
 
 # Use:
 import subprocess

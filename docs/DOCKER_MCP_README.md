@@ -25,11 +25,11 @@ This directory contains the implementation of a complete Docker-based infrastruc
 ┌──────────────────────────────────────────────────────────┐
 │ Model backends (selected by stack / configuration)        │
 ├──────────────────────────────────────────────────────────┤
-│ AMD64 NIM services (common defaults):                     │
-│ • AlphaFold2         (8081)                               │
-│ • RFDiffusion        (8082)                               │
-│ • ProteinMPNN        (8083)                               │
-│ • AlphaFold2-Multimer (8084)                              │
+│ AMD64 dashboard stacks (common defaults):                 │
+│ • AlphaFold2         (18081)                              │
+│ • RFDiffusion        (18082)                              │
+│ • ProteinMPNN        (18083)                              │
+│ • AlphaFold2-Multimer (18084)                             │
 │                                                          │
 │ ARM64 host-native wrappers (DGX Spark / aarch64):         │
 │ • AlphaFold2         (18081, includes /v1/metrics)        │
@@ -68,7 +68,7 @@ export HOST_NIM_CACHE=~/.cache/nim
 
 3. Start all services:
 ```bash
-docker compose -f ../deploy/docker-compose-full.yaml up
+./scripts/run_dashboard_stack.sh up -d --build
 ```
 
 ### Accessing Services
@@ -77,8 +77,10 @@ docker compose -f ../deploy/docker-compose-full.yaml up
 - **MCP Server API (host)**: http://localhost:${MCP_SERVER_HOST_PORT:-8011}
 - **MCP Server Docs (host)**: http://localhost:${MCP_SERVER_HOST_PORT:-8011}/docs
 - **Jupyter Notebook**: http://localhost:8888
-- **NIM Services (AMD64 stack)**: http://localhost:8081-8084
+- **Model services (typical)**: http://localhost:18081-18084
 - **ARM64 native wrappers (DGX Spark)**: http://localhost:18081-18084
+
+Note: when running the MCP server directly (no stack), some defaults and older examples use `8081-8084` for model services.
 
 ### Backend routing + fallback (NIM → external → embedded)
 
@@ -291,13 +293,13 @@ docker compose -f ../deploy/docker-compose-full.yaml run -p 8888:8888 jupyter \
 ### Environment Variables
 
 #### MCP Server
-- `ALPHAFOLD_URL` - AlphaFold service URL (default: http://localhost:8081)
-- `RFDIFFUSION_URL` - RFDiffusion service URL (default: http://localhost:8082)
-- `PROTEINMPNN_URL` - ProteinMPNN service URL (default: http://localhost:8083)
-- `ALPHAFOLD_MULTIMER_URL` - AlphaFold-Multimer service URL (default: http://localhost:8084)
+- `ALPHAFOLD_URL` - AlphaFold service URL (default: http://localhost:8081 when running locally; stack setups typically point this at http://localhost:18081)
+- `RFDIFFUSION_URL` - RFDiffusion service URL (default: http://localhost:8082 when running locally; stack setups typically point this at http://localhost:18082)
+- `PROTEINMPNN_URL` - ProteinMPNN service URL (default: http://localhost:8083 when running locally; stack setups typically point this at http://localhost:18083)
+- `ALPHAFOLD_MULTIMER_URL` - AlphaFold-Multimer service URL (default: http://localhost:8084 when running locally; stack setups typically point this at http://localhost:18084)
 
 #### MCP Dashboard
-- `NEXT_PUBLIC_MCP_SERVER_URL` - MCP Server URL (default: http://localhost:8000)
+- `NEXT_PUBLIC_MCP_SERVER_URL` - MCP Server URL (often set explicitly; some dev tools default to http://localhost:8010 for a standalone MCP server)
 
 #### NIM Services
 - `NGC_CLI_API_KEY` - NGC API key (required)
@@ -392,17 +394,22 @@ jupyter notebook
 
 Check that the MCP Server is running:
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:${MCP_SERVER_HOST_PORT:-8011}/health
+
+# If you're using the standalone MCP server container instead:
+# curl http://localhost:8010/health
 ```
 
 ### MCP Server can't connect to NIMs
 
 Check NIM service status:
 ```bash
-curl http://localhost:8081/v1/health/ready
-curl http://localhost:8082/v1/health/ready
-curl http://localhost:8083/v1/health/ready
-curl http://localhost:8084/v1/health/ready
+curl http://localhost:18081/v1/health/ready
+curl http://localhost:18082/v1/health/ready
+curl http://localhost:18083/v1/health/ready
+curl http://localhost:18084/v1/health/ready
+
+# Some legacy/custom setups may publish 8081–8084 instead.
 ```
 
 ### Jupyter container exits immediately

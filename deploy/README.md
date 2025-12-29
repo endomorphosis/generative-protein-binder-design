@@ -2,13 +2,19 @@
 
 ## Install Dependencies
 
-To get started with docker compose, you'll need to have docker, docker compose, and the
-nvidia container toolkit installed and up to date. This workflow is only compatible with 
-docker compose version 2 or greater.
+You need:
 
-At a minimum, this will require:
+- Docker Engine
+- Docker Compose v2 (`docker compose ...`)
+- (Optional, for NIM services) NVIDIA drivers + NVIDIA Container Toolkit
+
+On Ubuntu, Docker Compose v2 is typically provided by the Docker *compose plugin* (package names vary by distro).
+
+Sanity checks:
+
 ```bash
-sudo apt-get install -y docker-compose
+docker --version
+docker compose version
 ```
 
 ## Set your personal NGC CLI API KEY Environment Variable
@@ -23,8 +29,8 @@ export NGC_CLI_API_KEY=<YOUR NGC PERSONAL RUN KEY>
 ## Log in to nvcr.io
 
 ```bash
-## Use the literal '$oauthtoken' for username and your NGC_CLI_API_KEY for the password
-docker login nvcr.io --username='$oauthtoken' --password="${NGC_CLI_API_KEY}"
+# Use the literal '$oauthtoken' for username and your NGC_CLI_API_KEY for the password
+echo "$NGC_CLI_API_KEY" | docker login nvcr.io --username='$oauthtoken' --password-stdin
 ```
 
 
@@ -50,30 +56,27 @@ export HOST_NIM_CACHE=~/.cache/nim
 
 ## Start the Docker Compose Configuration
 
-Now, you can start docker compose by running `docker compose up` from the `deploy/` directory
-of the Protein Design Blueprint repository:
+Recommended (auto-selects the right compose file for your platform):
 
 ```bash
-## From the root of the cloned Protein Design repository:
-cd deploy/
-docker compose up
+./scripts/run_dashboard_stack.sh up -d --build
 ```
 
-Alternatively (recommended), you can start the correct stack from the repo root using the helper script:
+If you want the “batteries included” flow that may also start host-native wrapper services (and optionally provision minimal assets on ARM64), use:
 
 ```bash
 ./scripts/start_everything.sh
 ```
 
-To stop everything:
+Stop:
 
 ```bash
 ./scripts/stop_everything.sh
 ```
 
-This script starts the dashboard + MCP server + model backends together, and will ensure `HOST_NIM_CACHE`
-is set to a real path (defaults to `$HOME/.cache/nim`) and that the cache directory exists and is writable
-by the NIM containers.
+Notes:
+- The dashboard stacks expose the MCP Server on `http://localhost:${MCP_SERVER_HOST_PORT:-8011}`.
+- The AMD64 NIM stack will download large model assets into `HOST_NIM_CACHE` on first start (can take hours).
 
 This will first pull the containers then start them. When the containers start they will
 pull the model for each NIM. This process can take several hours; in the case of AlphaFold2

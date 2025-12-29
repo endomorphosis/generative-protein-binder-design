@@ -76,6 +76,10 @@ In the Dashboard header, click **Settings** to choose how model calls are routed
 
 Use **fallback** mode to try providers in order (recommended). These settings persist across restarts when using the provided Docker compose stacks.
 
+Tip: This repo sometimes has *two* MCP server ports in play:
+- Stack server: `http://localhost:${MCP_SERVER_HOST_PORT:-8011}` (used by the dashboard stacks)
+- Standalone local MCP server: `http://localhost:8010` (used by some demos/tools)
+
 ## Common questions
 
 ### "Some services show not_ready or disabled"
@@ -97,6 +101,8 @@ MCP_DASHBOARD_HOST_PORT=3005 ./scripts/run_dashboard_stack.sh up -d --build
 ## Where to go next
 
 - **🔥 FOR AI AGENTS & CONTRIBUTORS**: [INSTITUTIONAL_KNOWLEDGE.md](INSTITUTIONAL_KNOWLEDGE.md) - Complete GPU/MMseqs2 optimization history (**READ THIS FIRST!**)
+- Docs index: [docs/INDEX.md](docs/INDEX.md)
+- Agent guide (how to run things deterministically): [docs/AGENTS.md](docs/AGENTS.md)
 - **GPU Integration Complete**: [INTEGRATION_COMPLETE.md](INTEGRATION_COMPLETE.md) - All GPU/CUDA 13.1/MMseqs2 work (34/34 checks passing)
 - **Zero-Touch GPU Setup**: [ZERO_TOUCH_GPU_COMPLETE.md](ZERO_TOUCH_GPU_COMPLETE.md) - Automated GPU configuration
 - **MMseqs2 GPU Quickstart**: [docs/MMSEQS2_GPU_QUICKSTART.md](docs/MMSEQS2_GPU_QUICKSTART.md) - User guide for 10x speedup

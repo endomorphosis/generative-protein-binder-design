@@ -33,10 +33,12 @@ If you’re running the full stack via `./scripts/run_dashboard_stack.sh`, the M
 
 ## Environment Variables
 
-- `ALPHAFOLD_URL` - AlphaFold service endpoint (default: http://localhost:8081)
-- `RFDIFFUSION_URL` - RFDiffusion service endpoint (default: http://localhost:8082)
-- `PROTEINMPNN_URL` - ProteinMPNN service endpoint (default: http://localhost:8083)
-- `ALPHAFOLD_MULTIMER_URL` - AlphaFold-Multimer service endpoint (default: http://localhost:8084)
+- `ALPHAFOLD_URL` - AlphaFold service endpoint (default: http://localhost:8081 when running locally)
+- `RFDIFFUSION_URL` - RFDiffusion service endpoint (default: http://localhost:8082 when running locally)
+- `PROTEINMPNN_URL` - ProteinMPNN service endpoint (default: http://localhost:8083 when running locally)
+- `ALPHAFOLD_MULTIMER_URL` - AlphaFold-Multimer service endpoint (default: http://localhost:8084 when running locally)
+
+Note: in this repo’s dashboard compose stacks, model services are typically published on host ports `18081–18084` and the stack sets these URLs accordingly.
 
 ## API Endpoints
 

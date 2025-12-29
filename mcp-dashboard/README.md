@@ -7,7 +7,18 @@ Web-based dashboard for the Protein Binder Design MCP Server.
 ### Using Docker
 ```bash
 docker build -t mcp-dashboard .
-docker run -p 3000:3000 -e NEXT_PUBLIC_MCP_SERVER_URL=http://localhost:8000 mcp-dashboard
+
+# Recommended: run the full stack from repo root:
+#   ./scripts/run_dashboard_stack.sh up -d --build
+
+# If you run the dashboard container by itself, you must point it at an MCP server.
+# Example: MCP server running on the host (stack port 8011).
+# On Linux, include --add-host so host.docker.internal resolves.
+docker run -p 3000:3000 \
+	--add-host=host.docker.internal:host-gateway \
+	-e MCP_SERVER_URL=http://host.docker.internal:${MCP_SERVER_HOST_PORT:-8011} \
+	-e NEXT_PUBLIC_MCP_SERVER_URL=http://localhost:${MCP_SERVER_HOST_PORT:-8011} \
+	mcp-dashboard
 ```
 
 ### Local Development
@@ -29,8 +40,12 @@ The dashboard will be available at http://localhost:3000
 ## Environment Variables
 
 - `NEXT_PUBLIC_MCP_SERVER_URL` - MCP Server endpoint
-	- Local dev MCP server default: `http://localhost:8000`
-	- Full stack (via `./scripts/run_dashboard_stack.sh`) default: `http://localhost:${MCP_SERVER_HOST_PORT:-8011}`
+	- Local dev server (running `python server.py`): `http://localhost:8000`
+	- Standalone MCP server container: `http://localhost:8010`
+	- Full stack (via `./scripts/run_dashboard_stack.sh`): `http://localhost:${MCP_SERVER_HOST_PORT:-8011}`
+
+- `MCP_SERVER_URL` - MCP Server URL used by the dashboard's server-side `/api/mcp/*` proxy routes
+	- In compose stacks this is typically set to `http://mcp-server:8000`
 
 - `MCP_DASHBOARD_MOCK` - Enable dashboard-local mock backend (`1`/`true`)
 	- When enabled, `/api/mcp/*` routes return deterministic mock tool results (jobs, services, settings, and PDB data)

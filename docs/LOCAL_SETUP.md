@@ -131,8 +131,12 @@ pip install -r requirements.txt
 #### Deploy with Docker Compose
 
 ```bash
-cd deploy/
-docker compose up
+# Recommended (auto-selects the right compose file for your platform)
+./scripts/run_dashboard_stack.sh up -d --build
+
+# If you are working directly with a specific compose file:
+# cd deploy/
+# docker compose -f docker-compose-dashboard.yaml up -d --build
 ```
 
 **Important Notes:**
@@ -145,10 +149,13 @@ docker compose up
 Check that all services are ready:
 
 ```bash
-curl localhost:8081/v1/health/ready  # AlphaFold2
-curl localhost:8082/v1/health/ready  # RFDiffusion
-curl localhost:8083/v1/health/ready  # ProteinMPNN
-curl localhost:8084/v1/health/ready  # AlphaFold2-Multimer
+# In this repo's default stacks, model services are typically published on 18081–18084.
+curl localhost:18081/v1/health/ready  # AlphaFold2
+curl localhost:18082/v1/health/ready  # RFDiffusion
+curl localhost:18083/v1/health/ready  # ProteinMPNN
+curl localhost:18084/v1/health/ready  # AlphaFold2-Multimer
+
+# Some legacy or custom compose setups may instead publish 8081–8084.
 ```
 
 Each should return: `{"status":"ready"}`

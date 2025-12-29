@@ -168,7 +168,12 @@ MODEL_BACKEND=hybrid python3 server.py
 
 ```bash
 # Check which backend is active and model availability
+
+# If running `python3 server.py` locally, the default is typically :8000
 curl http://localhost:8000/api/services/status
+
+# If running via the compose stack, use the stack MCP server host port (defaults to 8011)
+# curl http://localhost:${MCP_SERVER_HOST_PORT:-8011}/api/services/status
 
 # Expected response:
 {

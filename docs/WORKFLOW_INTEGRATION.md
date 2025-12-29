@@ -377,30 +377,27 @@ bash scripts/test-mcp-server.sh
 
 ### Development Mode
 ```bash
-# MCP Server
-cd mcp-server && python3 server.py
-
-# Dashboard
-cd mcp-dashboard && npm run dev
+# Recommended (runs the full stack with correct wiring)
+./scripts/run_dashboard_stack.sh up -d --build
 
 # Access at:
-# - Dashboard: http://localhost:3000
-# - API: http://localhost:8000
-# - API Docs: http://localhost:8000/docs
+# - Dashboard: http://localhost:${MCP_DASHBOARD_HOST_PORT:-3000}
+# - MCP Server API: http://localhost:${MCP_SERVER_HOST_PORT:-8011}
+# - MCP Server Docs: http://localhost:${MCP_SERVER_HOST_PORT:-8011}/docs
+
+# If you run the MCP server directly (no docker), it typically listens on :8000 by default:
+#   cd mcp-server && python3 server.py
+#   curl http://localhost:8000/health
 ```
 
 ### Production Mode (Docker)
 ```bash
-docker compose -f ../deploy/docker-compose-full.yaml up
+./scripts/run_dashboard_stack.sh up -d --build
 
 # Access at:
-# - Dashboard: http://localhost:3000
-# - MCP Server: http://localhost:8000
-# - Jupyter: http://localhost:8888
-# - AlphaFold2: http://localhost:8081
-# - RFDiffusion: http://localhost:8082
-# - ProteinMPNN: http://localhost:8083
-# - AlphaFold2-Multimer: http://localhost:8084
+# - Dashboard: http://localhost:${MCP_DASHBOARD_HOST_PORT:-3000}
+# - MCP Server: http://localhost:${MCP_SERVER_HOST_PORT:-8011}
+# - Model services (typical): http://localhost:18081-18084
 ```
 
 ## Security Considerations
@@ -438,7 +435,10 @@ curl http://localhost:3000
 cd mcp-server && pip install -r requirements.txt
 
 # Check if server is running
-curl http://localhost:8000/health
+curl http://localhost:${MCP_SERVER_HOST_PORT:-8011}/health
+
+# If you're running the server locally (no stack), it may be on :8000
+# curl http://localhost:8000/health
 ```
 
 ### 3D Viewer Shows "No valid atoms"

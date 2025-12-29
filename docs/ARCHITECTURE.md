@@ -1,308 +1,138 @@
-# Architecture Documentation
+# Architecture
 
-## System Architecture
+This document describes how the repository fits together today (components, ports, and request flows). For “how to run”, start with `docs/QUICKSTART.md` and `docs/AGENTS.md`.
 
-The Protein Binder Design system with MCP Server and Dashboard consists of multiple interconnected components:
+## Components (high level)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         User Layer                               │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌───────────────┐              ┌───────────────┐               │
-│  │  Web Browser  │              │  Web Browser  │               │
-│  │  (Dashboard)  │              │  (Jupyter)    │               │
-│  └───────┬───────┘              └───────┬───────┘               │
-│          │                               │                       │
-│          │ HTTP/REST                     │ HTTP                  │
-│          │                               │                       │
-└──────────┼───────────────────────────────┼───────────────────────┘
-           │                               │
-           ▼                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     Application Layer                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌───────────────────┐         ┌───────────────────┐            │
-│  │  MCP Dashboard    │         │  Jupyter Server   │            │
-│  │  (Next.js/React)  │         │  (Python/Jupyter) │            │
-│  │  Port: 3000       │         │  Port: 8888       │            │
-│  └─────────┬─────────┘         └───────────────────┘            │
-│            │                                                      │
-│            │ MCP Protocol                                         │
-│            │ REST API                                             │
-│            │                                                      │
-│            ▼                                                      │
-│  ┌───────────────────┐                                           │
-│  │   MCP Server      │                                           │
-│  │   (FastAPI)       │                                           │
-│  │   Port: 8000      │                                           │
-│  │                   │                                           │
-│  │  Components:      │                                           │
-│  │  • Job Manager    │                                           │
-│  │  • MCP Protocol   │                                           │
-│  │  • Workflow       │                                           │
-│  │    Orchestrator   │                                           │
-│  └─────────┬─────────┘                                           │
-│            │                                                      │
-└────────────┼──────────────────────────────────────────────────────┘
-             │
-             │ HTTP/REST
-             │
-             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    NIM Service Layer                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │ AlphaFold2   │  │ RFDiffusion  │  │ ProteinMPNN  │          │
-│  │ (NIM)        │  │ (NIM)        │  │ (NIM)        │          │
-│  │ Port: 8081   │  │ Port: 8082   │  │ Port: 8083   │          │
-│  │ GPU: 0       │  │ GPU: 1       │  │ GPU: 2       │          │
-│  └──────────────┘  └──────────────┘  └──────────────┘          │
-│                                                                   │
-│  ┌──────────────┐                                                │
-│  │ AlphaFold2   │                                                │
-│  │ Multimer     │                                                │
-│  │ (NIM)        │                                                │
-│  │ Port: 8084   │                                                │
-│  │ GPU: 3       │                                                │
-│  └──────────────┘                                                │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+- **MCP Server** (`mcp-server/`): FastAPI app that exposes MCP endpoints, job orchestration endpoints, runtime configuration, and backend/provider routing.
+- **MCP Dashboard** (`mcp-dashboard/`): Next.js/React UI. The browser talks to dashboard routes; the dashboard proxies most backend calls to the MCP server.
+- **Model backends**: One or more services that actually run the heavy steps (NIM containers, “host-native” wrappers, or “embedded” implementations).
+- **Scripts + compose** (`scripts/`, `deploy/`): Source of truth for stack selection and how things get started on different platforms.
 
-## Component Details
+## Run modes and ports
 
-### 1. MCP Dashboard (Frontend)
-- **Technology**: Next.js 14, React 18, TypeScript, Tailwind CSS
-- **Purpose**: User interface for job submission and result visualization
-- **Key Features**:
-  - Real-time job monitoring
-  - Interactive form for protein sequence input
-  - Service health status display
-  - Result visualization and download
-  - Jupyter notebook launcher
+There are two common MCP server entrypoints you’ll see referenced throughout the repo:
 
-### 2. MCP Server (Backend)
-- **Technology**: FastAPI, Python 3.11, Uvicorn
-- **Purpose**: Workflow orchestration and job management
-- **Key Features**:
-  - RESTful API for job management
-  - Model Context Protocol (MCP) implementation
-  - Background job processing
-  - Service health monitoring
-  - Job state management
+### 1) Compose “stack” mode (recommended)
 
-### 3. Jupyter Server
-- **Technology**: Jupyter Notebook, Python 3.11
-- **Purpose**: Interactive notebook environment
-- **Key Features**:
-  - Pre-configured environment with bioinformatics packages
-  - Example notebooks
-  - Direct access to NIM services
+- MCP server is published on host **`8011`** by default (container listens on 8000).
+- Dashboard is published on host **`3000`** by default.
+- Model services are commonly published on host ports **`18081`–`18084`** (exact services depend on mode/platform).
 
-### 4. NIM Services
-- **AlphaFold2**: Predicts protein structure from sequence
-- **RFDiffusion**: Generates protein backbone designs
-- **ProteinMPNN**: Predicts sequences for backbones
-- **AlphaFold2-Multimer**: Predicts complex structures
+### 2) Standalone MCP server container (optional)
 
-## Data Flow
+- MCP server is published on host **`8010`** by default (container listens on 8000).
+- Useful for local development or when you don’t want the full dashboard stack.
 
-### Job Processing Workflow
+Environment variables used across the repo:
 
-```
-1. User submits protein sequence via Dashboard
-         ↓
-2. Dashboard sends POST request to MCP Server
-         ↓
-3. MCP Server creates job and returns job_id
-         ↓
-4. MCP Server starts background processing:
-   
-   Step 1: AlphaFold2
-   - Input: Protein sequence
-   - Output: Target protein structure (PDB)
-         ↓
-   Step 2: RFDiffusion
-   - Input: Target structure
-   - Output: N binder backbone designs (PDB)
-         ↓
-   Step 3: ProteinMPNN
-   - Input: Binder backbones
-   - Output: N binder sequences
-         ↓
-   Step 4: AlphaFold2-Multimer
-   - Input: Target + Binder sequences
-   - Output: N complex structures (PDB)
-         ↓
-5. Results stored and available via API
-         ↓
-6. Dashboard polls for updates and displays results
-```
+- `MCP_SERVER_HOST_PORT`: host port for the stack MCP server (defaults to 8011 in stack scripts/compose).
+- `MCP_DASHBOARD_HOST_PORT`: host port for the dashboard (defaults to 3000).
+- `MCP_SERVER_URL` / `NEXT_PUBLIC_MCP_SERVER_URL`: where the dashboard/proxies point for the MCP server.
 
-## API Architecture
+## Request and data flow
 
-### MCP Protocol Endpoints
-```
-GET  /mcp/v1/tools              # List available tools
-GET  /mcp/v1/resources          # List available resources
-GET  /mcp/v1/resources/{id}     # Get specific resource
-```
+### Dashboard-driven flow (typical)
 
-### Job Management Endpoints
-```
-POST   /api/jobs                # Create new job
-GET    /api/jobs                # List all jobs
-GET    /api/jobs/{id}           # Get job status
-DELETE /api/jobs/{id}           # Delete job
-```
+1. **Browser → Dashboard**: The user interacts with the Next.js app.
+2. **Dashboard → MCP server (proxy)**: The dashboard calls server-side API routes under `mcp-dashboard/app/api/mcp/*`, which then forward requests to the MCP server.
+3. **MCP server → backends**: The MCP server selects a provider chain (single or fallback) and calls the configured backends.
+4. **Results**: The MCP server writes job outputs and serves them via REST/MCP endpoints; the dashboard polls or streams progress.
 
-### Health & Monitoring
-```
-GET /health                     # Server health
-GET /api/services/status        # NIM services status
-```
+### Direct API flow (headless/agent)
 
-## Deployment Options
+Agents or scripts can talk directly to the MCP server without going through the dashboard:
 
-### Option 1: Full Stack (Production)
-```yaml
-../deploy/docker-compose-full.yaml
-  - All NIM services
-  - MCP Server
-  - MCP Dashboard
-  - Jupyter Server
-```
+- REST-style job APIs under `/api/*`
+- MCP protocol endpoints (`/mcp` JSON-RPC, `/mcp/v1/*` REST)
+- Server-sent events (SSE) endpoints for streaming updates
 
-### Option 2: Development (Local)
-```bash
-# Terminal 1: NIM Services
-cd deploy && docker compose up
+## MCP server API surface (practical)
 
-# Terminal 2: MCP Server
-cd mcp-server && python server.py
+### Health & status
 
-# Terminal 3: Dashboard
-cd mcp-dashboard && npm run dev
+- `GET /health`: server liveness.
+- `GET /api/services/status`: aggregated backend/provider health.
+- `GET /api/gpu/status`: GPU visibility/status (when supported).
 
-# Terminal 4: Jupyter
-cd src && jupyter notebook
-```
+### Runtime config
 
-### Option 3: NIMs Only (Original)
-```bash
-cd deploy && docker compose up
-```
+- `GET /api/config`: current routing/provider config.
+- `PUT /api/config`: update routing/provider config.
+- `POST /api/config/reset`: reset to defaults.
 
-## Security Considerations
+Config persistence:
 
-### Current Implementation (Development)
-- No authentication on MCP Server
-- No token required for Jupyter
-- CORS enabled for all origins
-- No HTTPS/TLS
+- Persisted to `MCP_CONFIG_PATH` when set (compose stacks mount this under `/config/`).
+- Can be forced read-only via `MCP_CONFIG_READONLY=1`.
 
-### Production Recommendations
-1. **Authentication**: Add JWT or OAuth2 to MCP Server
-2. **Authorization**: Implement role-based access control
-3. **Secrets**: Use secrets management (e.g., HashiCorp Vault)
-4. **TLS**: Enable HTTPS with proper certificates
-5. **CORS**: Restrict to specific origins
-6. **Rate Limiting**: Implement API rate limiting
-7. **Input Validation**: Strict validation of protein sequences
-8. **Jupyter Security**: Enable token/password authentication
+### Jobs
 
-## Scalability Considerations
+- `POST /api/jobs`: create a job.
+- `GET /api/jobs`: list jobs.
+- `GET /api/jobs/{job_id}`: job status/details.
 
-### Current Limitations
-- In-memory job storage (lost on restart)
-- Single MCP Server instance
-- Synchronous job processing
+### MCP protocol + streaming
 
-### Production Recommendations
-1. **Database**: Use PostgreSQL/MongoDB for job storage
-2. **Message Queue**: Add Celery/RabbitMQ for async processing
-3. **Caching**: Implement Redis for caching
-4. **Load Balancing**: Multiple MCP Server instances
-5. **Container Orchestration**: Use Kubernetes for auto-scaling
-6. **Monitoring**: Add Prometheus/Grafana
-7. **Logging**: Centralized logging (ELK stack)
+- `POST /mcp`: MCP JSON-RPC endpoint.
+- `GET /mcp/v1/tools`, `GET /mcp/v1/resources`: MCP REST helpers.
+- `GET /sse` and `GET /mcp/sse`: SSE streaming endpoints.
 
-## Network Architecture
+## Backend routing model
 
-```
-Port Mapping:
-3000  → MCP Dashboard (HTTP)
-8000  → MCP Server (HTTP)
-8081  → AlphaFold2 NIM
-8082  → RFDiffusion NIM
-8083  → ProteinMPNN NIM
-8084  → AlphaFold2-Multimer NIM
-8888  → Jupyter Notebook (HTTP)
-```
+The MCP server supports multiple provider types and a routing strategy:
 
-## Technology Stack Summary
+- **Provider types** (conceptually):
+  - `nim`: NVIDIA Inference Microservice endpoints (usually on host ports like 18081–18084 in this repo’s stacks).
+  - `external`: arbitrary HTTP endpoints you provide.
+  - `embedded`: local/packaged implementations that can be bootstrapped/downloaded.
 
-| Component | Technology | Language | Framework |
-|-----------|-----------|----------|-----------|
-| Dashboard | Frontend | TypeScript | Next.js 14, React 18 |
-| MCP Server | Backend | Python 3.11 | FastAPI, Uvicorn |
-| Jupyter | Interactive | Python 3.11 | Jupyter Notebook |
-| NIMs | AI Services | N/A | NVIDIA NIMs |
+- **Routing modes**:
+  - `single`: always use one provider.
+  - `fallback`: try providers in order until one succeeds.
 
-## Development Workflow
+This logic lives primarily in `mcp-server/runtime_config.py` (schema, persistence, env overrides) and `mcp-server/model_backends.py` (provider implementations + fallback behavior).
 
-```
-1. Code Changes
-         ↓
-2. Local Testing
-   - Lint: npm run lint (Dashboard)
-   - Type Check: npx tsc --noEmit
-   - Build: npm run build
-   - Test: ./scripts/test-mcp-server.sh
-         ↓
-3. Docker Build
-   - docker build -t mcp-server mcp-server/
-   - docker build -t mcp-dashboard mcp-dashboard/
-   - docker build -t jupyter-user user-container/
-         ↓
-4. Integration Testing
-   - docker compose -f ../deploy/docker-compose-full.yaml up
-         ↓
-5. Deployment
-```
+## Dashboard proxy routes (why they exist)
 
-## Performance Characteristics
+The dashboard runs in the browser, but the MCP server may be on a different origin/port. The dashboard therefore provides server-side proxy routes under `mcp-dashboard/app/api/mcp/*` for:
 
-### Expected Response Times (with NIMs running)
-- Job Creation: < 100ms
-- Job Status Query: < 50ms
-- AlphaFold2 Prediction: 30-300 seconds
-- RFDiffusion Generation: 10-60 seconds per design
-- ProteinMPNN Sequence: 5-20 seconds per design
-- AlphaFold2-Multimer: 60-600 seconds per complex
+- Config: `/api/mcp/config`, `/api/mcp/config/reset`
+- Status: `/api/mcp/services/status`
+- Tools/resources: `/api/mcp/tools`, `/api/mcp/tools/call`, `/api/mcp/resources`, `/api/mcp/resources/read`
+- Jobs: `/api/mcp/jobs`, `/api/mcp/jobs/status`
+- Embedded bootstrap: `/api/mcp/embedded/bootstrap`
 
-### Resource Requirements
-- MCP Server: 2 CPU cores, 2GB RAM
-- Dashboard: 2 CPU cores, 2GB RAM
-- Jupyter: 2 CPU cores, 4GB RAM
-- Each NIM: 1 GPU, 24+ CPU cores, 32+ GB RAM
+SSE is also proxied via the dashboard’s SSE routes.
 
-## Error Handling
+## Deployment and stack selection
 
-### MCP Server
-- Graceful fallback to mock data when NIMs unavailable
-- Detailed error messages in job progress
-- Health check endpoints for monitoring
+The compose files under `deploy/` define multiple deployment variants (dashboard-only, full, GPU-optimized, ARM64, etc.). In practice, the supported entrypoint is:
 
-### Dashboard
-- Automatic retry on network errors
-- User-friendly error messages
-- Service status indicators
+- `./scripts/run_dashboard_stack.sh up -d --build`
 
-### Job Processing
-- Per-step error tracking
-- Partial results on step failure
-- Job state persistence
+That script auto-selects the appropriate compose file for your platform and available backends (e.g., host-native wrappers vs NIMs vs control-plane).
+
+## Where to make changes
+
+- **MCP server endpoints**: `mcp-server/server.py`
+- **Routing/config schema + persistence**: `mcp-server/runtime_config.py`
+- **Backend/provider implementations**: `mcp-server/model_backends.py`
+- **Dashboard settings UI** (routing/provider config UX): `mcp-dashboard/components/BackendSettings.tsx`
+- **Dashboard proxy handlers**: `mcp-dashboard/app/api/mcp/*`
+- **Stack selection logic**: `scripts/run_dashboard_stack.sh` (and diagnostics in `scripts/doctor_stack.sh`)
+
+## Troubleshooting hooks
+
+- Stack health checks:
+      - `curl http://localhost:${MCP_SERVER_HOST_PORT:-8011}/health`
+      - `curl http://localhost:${MCP_SERVER_HOST_PORT:-8011}/api/services/status`
+- Diagnostics script: `./scripts/doctor_stack.sh`
+- Container logs: `./scripts/run_dashboard_stack.sh logs -f --tail=200`
+
+## Security notes (current default)
+
+The stack is primarily geared toward local/dev and trusted-network use:
+
+- No authentication by default on most endpoints.
+- If exposing beyond localhost, put a reverse proxy in front and add auth/TLS, and restrict origins.

@@ -257,12 +257,12 @@ Route (app)                              Size     First Load JS
 ### Start the Full Stack
 ```bash
 export NGC_CLI_API_KEY=<your-key>
-docker compose -f ../deploy/docker-compose-full.yaml up
+./scripts/run_dashboard_stack.sh up -d --build
 ```
 
 ### Create a Job via API
 ```bash
-curl -X POST http://localhost:8000/api/jobs \
+curl -X POST http://localhost:${MCP_SERVER_HOST_PORT:-8011}/api/jobs \
   -H "Content-Type: application/json" \
   -d '{
     "sequence": "MKFLKFSLLTAVLLSVVFAFSSCG",
@@ -273,7 +273,7 @@ curl -X POST http://localhost:8000/api/jobs \
 
 ### Access Services
 - Dashboard: http://localhost:3000
-- API Docs: http://localhost:8000/docs
+- API Docs: http://localhost:${MCP_SERVER_HOST_PORT:-8011}/docs
 - Jupyter: http://localhost:8888
 
 ## Key Achievements

@@ -100,9 +100,12 @@ docker compose -f docker-compose-arm64-native.yaml logs -f
 
 #### Service Endpoints
 
-- AlphaFold2: http://localhost:8081
-- RFDiffusion: http://localhost:8082
-- ProteinMPNN: http://localhost:8083
+- If you are running `docker-compose-arm64-native.yaml` directly:
+  - AlphaFold2: http://localhost:8081
+  - RFDiffusion: http://localhost:8082
+  - ProteinMPNN: http://localhost:8083
+
+- If you are using the repo's main dashboard stack scripts, model services are typically published on 18081–18084 (see `docs/QUICKSTART.md`).
 
 ### Option 3: AMD64 Emulation (Fallback)
 
