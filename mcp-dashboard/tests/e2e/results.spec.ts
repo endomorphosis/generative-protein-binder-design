@@ -149,11 +149,86 @@ test.describe('Results viewer', () => {
     const variantSequenceEl = page.getByTestId('variant-sequence-0')
     await expect(variantSequenceEl).toBeVisible()
     const variantSequence = (await variantSequenceEl.innerText()).trim()
-    await page.getByTestId('iterate-variant-0').click()
+    await page.getByTestId('save-variant-0').evaluate((el: HTMLElement) => el.click())
+    await page.getByTestId('iterate-variant-0').evaluate((el: HTMLElement) => el.click())
 
     await expect(page.getByText('🔬 3D Protein Structure Viewer')).toBeHidden()
     await expect(page.getByLabel(/Target Protein Sequence/i)).toHaveValue(variantSequence)
 
     // (modal already closed by iterate button)
+  })
+
+  test('saving a variant adds it to the Design Library', async ({ page }) => {
+    const job = makeCompletedJob()
+
+    await page.route('**/api/mcp/services/status', async (route) => {
+      await jsonRoute(route, { alphafold: { status: 'ready', url: 'x' } })
+    })
+
+    await page.route('**/api/mcp/jobs', async (route) => {
+      if (route.request().method() === 'GET') {
+        await jsonRoute(route, [job])
+        return
+      }
+      await route.fallback()
+    })
+
+    await page.goto('/')
+    await page.getByText('Completed Job').click()
+
+    await page.getByRole('button', { name: /View 3D/i }).click()
+    await expect(page.getByText('🔬 3D Protein Structure Viewer')).toBeVisible()
+
+    await page.getByLabel('Variant positions').fill('1,2,3')
+    await page.getByTestId('propose-variants').click()
+
+    const variantSequenceEl = page.getByTestId('variant-sequence-0')
+    await expect(variantSequenceEl).toBeVisible()
+    const variantSequence = (await variantSequenceEl.innerText()).trim()
+
+    await page.getByTestId('save-variant-0').evaluate((el: HTMLElement) => el.click())
+    await page.getByRole('button', { name: 'Close 3D Viewer' }).click()
+
+    const lib = page.getByTestId('design-library')
+    await expect(lib).toBeVisible()
+    await expect(lib.getByText(variantSequence)).toBeVisible()
+
+    // Saved variants include PDB data, so the library item can reopen in 3D.
+    await lib.getByRole('button', { name: 'View 3D' }).click()
+    await expect(page.getByText('🔬 3D Protein Structure Viewer')).toBeVisible()
+    await page.getByRole('button', { name: 'Close 3D Viewer' }).click()
+    await expect(page.getByText('🔬 3D Protein Structure Viewer')).toBeHidden()
+  })
+
+  test('saving a binder design adds it to the Design Library and can reopen 3D', async ({ page }) => {
+    const job = makeCompletedJob()
+
+    await page.route('**/api/mcp/services/status', async (route) => {
+      await jsonRoute(route, { alphafold: { status: 'ready', url: 'x' } })
+    })
+
+    await page.route('**/api/mcp/jobs', async (route) => {
+      if (route.request().method() === 'GET') {
+        await jsonRoute(route, [job])
+        return
+      }
+      await route.fallback()
+    })
+
+    await page.goto('/')
+    await page.getByText('Completed Job').click()
+
+    // Design 1 starts expanded by default.
+    await page.getByTestId('save-design-0').click()
+
+    const lib = page.getByTestId('design-library')
+    await expect(lib).toBeVisible()
+
+    // Reopen the saved design's structure from the library.
+    await lib.getByRole('button', { name: 'View 3D' }).click()
+    await expect(page.getByText('🔬 3D Protein Structure Viewer')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Close 3D Viewer' }).click()
+    await expect(page.getByText('🔬 3D Protein Structure Viewer')).toBeHidden()
   })
 })

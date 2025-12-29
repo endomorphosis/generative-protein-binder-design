@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { addToDesignLibrary } from '@/lib/design-library'
 
 interface ProteinViewer3DProps {
   pdbData: string
@@ -27,6 +28,61 @@ export default function ProteinViewer3D({ pdbData, onClose, title, sequence, onU
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
+
+  const setObjectMaterialOpacity = (obj: THREE.Object3D, opacity: number, transparent: boolean) => {
+    const mesh = obj as THREE.Mesh
+    const mat = (mesh as any).material as THREE.Material | THREE.Material[] | undefined
+    const applyTo = (m: THREE.Material) => {
+      const anyMat = m as any
+      if (typeof anyMat.opacity === 'number' && typeof anyMat.transparent === 'boolean') {
+        anyMat.opacity = opacity
+        anyMat.transparent = transparent
+        anyMat.needsUpdate = true
+      }
+    }
+
+    if (!mat) return
+    if (Array.isArray(mat)) {
+      mat.forEach(applyTo)
+    } else {
+      applyTo(mat)
+    }
+  }
+
+  useEffect(() => {
+    const scene = sceneRef.current
+    if (!scene) return
+
+    // Only atoms exist as meshes in Ball & Stick mode; keep other modes untouched.
+    if (renderMode !== 'sphere') {
+      scene.traverse((obj) => {
+        const ud = (obj as any)?.userData
+        if (ud?.kind !== 'atom') return
+        setObjectMaterialOpacity(obj, 1, false)
+      })
+      return
+    }
+
+    const selectedKeys = new Set(selectedResidues.map((r) => `${r.chain}:${r.residueNum}`))
+    const hasSelection = selectedKeys.size > 0
+
+    scene.traverse((obj) => {
+      const ud = (obj as any)?.userData
+      if (ud?.kind !== 'atom') return
+
+      if (!hasSelection) {
+        setObjectMaterialOpacity(obj, 1, false)
+        return
+      }
+
+      const key = `${String(ud.chain || '')}:${Number(ud.residueNum)}`
+      const isSelected = selectedKeys.has(key)
+
+      // Visual emphasis without introducing new colors: selected atoms stay opaque;
+      // non-selected atoms become translucent.
+      setObjectMaterialOpacity(obj, isSelected ? 1 : 0.25, true)
+    })
+  }, [renderMode, selectedResidues])
 
   const parsePositions = (text: string) => {
     const nums = text
@@ -687,6 +743,25 @@ export default function ProteinViewer3D({ pdbData, onClose, title, sequence, onU
                               className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-3 rounded transition-colors"
                             >
                               Iterate with this
+                            </button>
+                          </div>
+                        )}
+                        {typeof v?.sequence === 'string' && (
+                          <div className="mt-2">
+                            <button
+                              data-testid={`save-variant-${idx}`}
+                              onClick={() => {
+                                addToDesignLibrary({
+                                  sequence: v.sequence,
+                                  score: typeof v?.score === 'number' ? v.score : undefined,
+                                  positions: Array.isArray(v?.positions) ? v.positions : undefined,
+                                  source: title || '3D Viewer Variant',
+                                  pdbData,
+                                })
+                              }}
+                              className="w-full bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium py-2 px-3 rounded transition-colors"
+                            >
+                              Save to Library
                             </button>
                           </div>
                         )}

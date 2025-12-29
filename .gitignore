@@ -59,3 +59,6 @@ tools/generated/
 mcp-dashboard/playwright-report/
 mcp-dashboard/test-results/
 mcp-js-sdk/test-results/
+mcp-dashboard/playwright-report/index.html
+mcp-dashboard/test-results/.last-run.json
+mcp-dashboard/test-results/.last-run.json

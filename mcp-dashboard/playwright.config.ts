@@ -24,7 +24,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run dev -- -p ${port}`,
+    // Next dev server can be quite noisy (especially in this repo's environment);
+    // redirect its output so Playwright logs stay readable and don't get truncated.
+    command: `bash -lc 'npm run dev -- -p ${port} > .playwright-next-dev.log 2>&1'`,
     url: `http://127.0.0.1:${port}`,
     // Default to false so we don't accidentally point tests at a Docker container
     // (or any unrelated server) that happens to be listening on the same port.

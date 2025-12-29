@@ -3,6 +3,8 @@
 import { Job } from '@/lib/types'
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
+import { useEffect } from 'react'
+import { addToDesignLibrary, loadDesignLibrary, removeFromDesignLibrary, type DesignLibraryItem } from '@/lib/design-library'
 
 // Dynamically import the 3D viewer to avoid SSR issues with Three.js
 const ProteinViewer3D = dynamic(() => import('./ProteinViewer3D'), { ssr: false })
@@ -18,6 +20,14 @@ export default function ResultsViewer({ job, onIterate }: Props) {
   const [selectedPDB, setSelectedPDB] = useState<string>('')
   const [viewer3DTitle, setViewer3DTitle] = useState<string>('')
   const [viewerSequence, setViewerSequence] = useState<string | undefined>(undefined)
+  const [library, setLibrary] = useState<DesignLibraryItem[]>([])
+
+  useEffect(() => {
+    const refresh = () => setLibrary(loadDesignLibrary())
+    refresh()
+    window.addEventListener('design-library-updated', refresh)
+    return () => window.removeEventListener('design-library-updated', refresh)
+  }, [])
 
   if (job.status === 'failed') {
     return (
@@ -292,6 +302,20 @@ export default function ResultsViewer({ job, onIterate }: Props) {
                         🔬 View 3D
                       </button>
                       <button
+                        data-testid={`save-design-${design.design_id}`}
+                        onClick={() =>
+                          addToDesignLibrary({
+                            sequence,
+                            score: Number.isFinite(Number(bindingScore)) ? Number(bindingScore) : undefined,
+                            source: `Design ${design.design_id + 1}`,
+                            pdbData,
+                          })
+                        }
+                        className="flex-1 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium py-2 px-4 rounded transition-colors"
+                      >
+                        Save to Library
+                      </button>
+                      <button
                         onClick={() => {
                           const data = `>Design_${design.design_id + 1}\n${sequence}`
                           const blob = new Blob([data], { type: 'text/plain' })
@@ -313,6 +337,78 @@ export default function ResultsViewer({ job, onIterate }: Props) {
             )
           })}
         </div>
+      </div>
+
+      {/* Design Library */}
+      <div data-testid="design-library" className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-2xl">📚</span>
+          <h4 className="font-semibold text-gray-900 dark:text-white">Design Library</h4>
+          <span className="text-sm text-gray-500 dark:text-gray-400">({library.length})</span>
+        </div>
+
+        {library.length === 0 ? (
+          <div className="text-sm text-gray-500 dark:text-gray-400">No saved designs yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {library.slice(0, 20).map((item) => (
+              <div
+                key={item.id}
+                data-testid={`library-item-${item.id}`}
+                className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-900"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {item.source || 'Saved'}{item.score !== undefined ? ` · score ${item.score}` : ''}
+                    </div>
+                    <div data-testid={`library-sequence-${item.id}`} className="mt-1 font-mono text-xs text-gray-800 dark:text-gray-200 break-all">
+                      {item.sequence}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    {onIterate && (
+                      <button
+                        data-testid={`library-iterate-${item.id}`}
+                        onClick={() =>
+                          onIterate({
+                            sequence: item.sequence,
+                            num_designs: typeof job.input?.num_designs === 'number' ? job.input.num_designs : undefined,
+                          })
+                        }
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+                      >
+                        Iterate
+                      </button>
+                    )}
+                    {typeof item.pdbData === 'string' && item.pdbData.trim() && (
+                      <button
+                        data-testid={`library-view-3d-${item.id}`}
+                        onClick={() =>
+                          view3DWithSequence(
+                            item.pdbData || '',
+                            item.source ? `Library · ${item.source}` : 'Library · Saved Design',
+                            item.sequence
+                          )
+                        }
+                        className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+                      >
+                        View 3D
+                      </button>
+                    )}
+                    <button
+                      data-testid={`library-remove-${item.id}`}
+                      onClick={() => removeFromDesignLibrary(item.id)}
+                      className="bg-gray-600 hover:bg-gray-700 text-white text-xs font-medium py-2 px-3 rounded transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Download All Results */}
