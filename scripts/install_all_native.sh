@@ -222,6 +222,40 @@ fi
 
 echo ""
 
+# Request sudo access upfront and start keepalive
+log_info "Requesting sudo access for system dependencies..."
+if ! sudo -v; then
+    log_error "Sudo access required for installation"
+    exit 1
+fi
+
+# Start sudo keepalive in background
+# Refreshes sudo timestamp every 4 minutes (default timeout is 5 minutes)
+SUDO_KEEPALIVE_PID=""
+start_sudo_keepalive() {
+    while true; do
+        sleep 240  # 4 minutes
+        sudo -v
+    done &
+    SUDO_KEEPALIVE_PID=$!
+}
+
+# Stop sudo keepalive
+stop_sudo_keepalive() {
+    if [[ -n "$SUDO_KEEPALIVE_PID" ]]; then
+        kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+        wait "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+    fi
+}
+
+# Trap to cleanup keepalive on exit
+trap stop_sudo_keepalive EXIT INT TERM
+
+# Start the keepalive
+start_sudo_keepalive
+log_success "Sudo keepalive started (will refresh automatically)"
+echo ""
+
 # Track installation status
 INSTALLATION_LOG="$PROJECT_ROOT/.installation.log"
 START_TIME=$(date +%s)

@@ -209,7 +209,13 @@ log_success "System dependencies ready"
 # Step 2: Setup Conda environment
 log_step "Step 2/8: Setting up Conda environment"
 
-if ! command -v conda &>/dev/null; then
+# Check if Miniforge is already installed
+if [[ -d "$HOME/miniforge3" ]] && [[ -f "$HOME/miniforge3/bin/conda" ]]; then
+    log_info "Found existing Miniforge installation"
+    export PATH="$HOME/miniforge3/bin:$PATH"
+    source "$HOME/miniforge3/etc/profile.d/conda.sh"
+    log_success "Conda found"
+elif ! command -v conda &>/dev/null; then
     log_info "Conda not found. Installing Miniforge..."
     
     if [[ "$ARCH" == "x86_64" ]]; then
@@ -381,7 +387,7 @@ fi
 log_info "Installing AlphaFold external binaries (hmmer/hhsuite/kalign)..."
 # AlphaFold calls out to jackhmmer/hhblits/hhsearch/kalign.
 # On linux-aarch64 these tools are typically installed via apt (conda-forge packages may be unavailable).
-bash "$ROOT_DIR/scripts/ensure_alphafold_external_binaries.sh" || {
+bash "$PROJECT_ROOT/scripts/ensure_alphafold_external_binaries.sh" || {
     log_error "Failed to install/ensure required external tools (hmmer/hhsuite/kalign)"
     exit 1
 }
@@ -389,8 +395,8 @@ bash "$ROOT_DIR/scripts/ensure_alphafold_external_binaries.sh" || {
 log_info "Installing MMseqs2 (optional fast MSA backend)..."
 # Provision MMseqs2 for the experimental --msa_mode=mmseqs2 path.
 # Keep it optional at runtime; we do not enable it by default.
-if [[ -f "$ROOT_DIR/scripts/install_mmseqs2.sh" ]]; then
-    bash "$ROOT_DIR/scripts/install_mmseqs2.sh" --conda-env "$CONDA_ENV" --install-only || \
+if [[ -f "$PROJECT_ROOT/scripts/install_mmseqs2.sh" ]]; then
+    bash "$PROJECT_ROOT/scripts/install_mmseqs2.sh" --conda-env "$CONDA_ENV" --install-only || \
         log_warning "MMseqs2 install failed (mmseqs2 MSA mode will be unavailable)"
 else
     log_warning "Missing scripts/install_mmseqs2.sh; skipping MMseqs2 install"
@@ -417,27 +423,58 @@ log_step "Step 5/8: Installing AlphaFold"
 
 mkdir -p "$TOOLS_DIR"
 
+# Validate existing directory is the correct AlphaFold repository
+NEEDS_CLONE=false
 if [ -d "$ALPHAFOLD_DIR" ]; then
     if [ "$FORCE_INSTALL" = true ]; then
         log_info "Removing existing installation..."
         rm -rf "$ALPHAFOLD_DIR"
+        NEEDS_CLONE=true
     else
-        log_info "AlphaFold directory exists"
+        log_info "AlphaFold directory exists, validating..."
+        
+        # Check if it's a git repository with the correct remote
         if git -C "$ALPHAFOLD_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-            # If this is a submodule checkout, HEAD is often detached; don't try to git pull.
-            if git -C "$ALPHAFOLD_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
-                log_info "Updating AlphaFold repository (git pull)..."
-                git -C "$ALPHAFOLD_DIR" pull -q || log_warning "Git pull failed, continuing..."
+            REMOTE_URL=$(git -C "$ALPHAFOLD_DIR" remote get-url origin 2>/dev/null || echo "")
+            
+            # Check if it's the official DeepMind AlphaFold repository
+            if [[ "$REMOTE_URL" =~ github.com[:/]deepmind/alphafold ]]; then
+                log_info "Valid AlphaFold repository detected"
+                
+                # Verify download scripts exist
+                if [ -f "$ALPHAFOLD_DIR/scripts/download_pdb70.sh" ]; then
+                    log_success "AlphaFold repository verified with download scripts"
+                    
+                    # Update if not detached HEAD
+                    if git -C "$ALPHAFOLD_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
+                        log_info "Updating AlphaFold repository..."
+                        git -C "$ALPHAFOLD_DIR" pull -q || log_warning "Git pull failed, continuing..."
+                    fi
+                else
+                    log_warning "AlphaFold repo missing download scripts, re-cloning..."
+                    rm -rf "$ALPHAFOLD_DIR"
+                    NEEDS_CLONE=true
+                fi
             else
-                log_info "AlphaFold checkout is in detached HEAD; skipping git pull"
+                log_warning "Wrong repository detected (expected deepmind/alphafold, got $REMOTE_URL)"
+                log_info "Removing incorrect repository and re-cloning..."
+                rm -rf "$ALPHAFOLD_DIR"
+                NEEDS_CLONE=true
             fi
+        else
+            log_warning "Not a valid git repository, re-cloning..."
+            rm -rf "$ALPHAFOLD_DIR"
+            NEEDS_CLONE=true
         fi
     fi
+else
+    NEEDS_CLONE=true
 fi
 
-if [ ! -d "$ALPHAFOLD_DIR" ]; then
-    log_info "Cloning AlphaFold repository..."
+if [ "$NEEDS_CLONE" = true ]; then
+    log_info "Cloning official AlphaFold repository from DeepMind..."
     git clone -q https://github.com/deepmind/alphafold.git "$ALPHAFOLD_DIR"
+    log_success "AlphaFold repository cloned"
 fi
 
 cd "$ALPHAFOLD_DIR"
@@ -651,19 +688,86 @@ download_databases() {
         reduced)
             log_info "Downloading reduced databases (~50GB) into: $DATA_DIR"
             log_info "Using official AlphaFold download scripts (reduced_dbs layout)"
+            
+            # Track download results
+            DOWNLOAD_FAILURES=0
+            DOWNLOAD_SUCCESSES=0
 
             # Reduced DB set (still requires templates via PDB mmCIF rsync).
-            run_official_download_script download_small_bfd.sh || log_warning "Small BFD download failed"
-            download_mgnify_with_overrides || log_warning "MGnify missing"
-            run_official_download_script download_pdb70.sh || log_warning "PDB70 download failed"
-            run_official_download_script download_pdb_mmcif.sh || log_warning "PDB mmCIF download failed"
-            run_official_download_script download_uniref30.sh || log_warning "UniRef30 download failed"
-            run_official_download_script download_uniref90.sh || log_warning "UniRef90 download failed"
-            run_official_download_script download_uniprot.sh || log_warning "UniProt download failed"
-            run_official_download_script download_pdb_seqres.sh || log_warning "PDB SeqRes download failed"
+            log_info "Downloading Small BFD..."
+            if run_official_download_script download_small_bfd.sh; then
+                DOWNLOAD_SUCCESSES=$((DOWNLOAD_SUCCESSES + 1))
+            else
+                log_warning "Small BFD download failed"
+                DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
+            fi
+            
+            log_info "Downloading MGnify..."
+            if download_mgnify_with_overrides; then
+                DOWNLOAD_SUCCESSES=$((DOWNLOAD_SUCCESSES + 1))
+            else
+                log_warning "MGnify download failed"
+                DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
+            fi
+            
+            log_info "Downloading PDB70..."
+            if run_official_download_script download_pdb70.sh; then
+                DOWNLOAD_SUCCESSES=$((DOWNLOAD_SUCCESSES + 1))
+            else
+                log_warning "PDB70 download failed"
+                DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
+            fi
+            
+            log_info "Downloading PDB mmCIF..."
+            if run_official_download_script download_pdb_mmcif.sh; then
+                DOWNLOAD_SUCCESSES=$((DOWNLOAD_SUCCESSES + 1))
+            else
+                log_warning "PDB mmCIF download failed (may take a long time via rsync)"
+                DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
+            fi
+            
+            log_info "Downloading UniRef30..."
+            if run_official_download_script download_uniref30.sh; then
+                DOWNLOAD_SUCCESSES=$((DOWNLOAD_SUCCESSES + 1))
+            else
+                log_warning "UniRef30 download failed"
+                DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
+            fi
+            
+            log_info "Downloading UniRef90..."
+            if run_official_download_script download_uniref90.sh; then
+                DOWNLOAD_SUCCESSES=$((DOWNLOAD_SUCCESSES + 1))
+            else
+                log_warning "UniRef90 download failed"
+                DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
+            fi
+            
+            log_info "Downloading UniProt..."
+            if run_official_download_script download_uniprot.sh; then
+                DOWNLOAD_SUCCESSES=$((DOWNLOAD_SUCCESSES + 1))
+            else
+                log_warning "UniProt download failed"
+                DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
+            fi
+            
+            log_info "Downloading PDB SeqRes..."
+            if run_official_download_script download_pdb_seqres.sh; then
+                DOWNLOAD_SUCCESSES=$((DOWNLOAD_SUCCESSES + 1))
+            else
+                log_warning "PDB SeqRes download failed"
+                DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
+            fi
 
             echo "tier=reduced" > "$DATA_DIR/.tier"
-            log_success "Reduced database provisioning finished (check logs above for any warnings)"
+            echo "download_successes=$DOWNLOAD_SUCCESSES" >> "$DATA_DIR/.tier"
+            echo "download_failures=$DOWNLOAD_FAILURES" >> "$DATA_DIR/.tier"
+            
+            log_info "Database download summary: $DOWNLOAD_SUCCESSES succeeded, $DOWNLOAD_FAILURES failed"
+            if [ "$DOWNLOAD_FAILURES" -gt 0 ]; then
+                log_warning "Some databases failed to download. AlphaFold may work with reduced accuracy."
+                log_info "You can re-run the installer to retry failed downloads."
+            fi
+            log_success "Reduced database provisioning finished"
             ;;
             
         full)
@@ -691,8 +795,8 @@ download_databases() {
 download_databases
 
 # Optionally build an MMseqs2 DB from the reduced/full FASTA set (default UniRef90).
-if [[ -f "$ROOT_DIR/scripts/install_mmseqs2.sh" ]]; then
-    MMSEQS2_ENV="$(bash "$ROOT_DIR/scripts/install_mmseqs2.sh" \
+if [[ -f "$PROJECT_ROOT/scripts/install_mmseqs2.sh" ]]; then
+    MMSEQS2_ENV="$(bash "$PROJECT_ROOT/scripts/install_mmseqs2.sh" \
         --conda-env "$CONDA_ENV" \
         --data-dir "$DATA_DIR" \
         --db-tier "$DB_TIER" \
